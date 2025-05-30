@@ -1,0 +1,8 @@
+{
+  "main": {
+    "PROXMOX_HOST": "192.168.10.200",
+    "PROXMOX_USER": "root@pam",
+    "PROXMOX_PASSWORD": "Tenchi01!",
+    "PROXMOX_VERIFY_SSL": "no"
+  }
+}
