@@ -3,6 +3,7 @@
     "PROXMOX_HOST": "192.168.10.200",
     "PROXMOX_USER": "root@pam",
     "PROXMOX_PASSWORD": "Tenchi01!",
-    "PROXMOX_VERIFY_SSL": "no"
+    "PROXMOX_VERIFY_SSL": "no",
+    "PROXMOX_API_TOKEN": "root@pam!mcp-server=c95f4d0e-aeed-44b9-b292-aff0b5c270c2"
   }
 }

@@ -1,0 +1,261 @@
+{
+  "nodes": [
+    "ProxmoxNode(node='proxmox', status='online', cpu=0.0469898422660831, maxcpu=12, mem=18409906176, maxmem=66677018624, disk=6435983360, maxdisk=100861726720, uptime=15994, level='', id='node/proxmox')"
+  ],
+  "vms": [
+    {
+      "maxdisk": 10737418240,
+      "uptime": 0,
+      "diskwrite": 0,
+      "cpus": 2,
+      "disk": 0,
+      "cpu": 0,
+      "mem": 0,
+      "diskread": 0,
+      "name": "ai-mysql-test",
+      "maxmem": 4294967296,
+      "tags": "ai-created;mcp-managed;mysql-database",
+      "status": "stopped",
+      "netout": 0,
+      "netin": 0,
+      "vmid": 998,
+      "node": "proxmox"
+    },
+    {
+      "maxdisk": 161061273600,
+      "pid": 1231,
+      "uptime": 15979,
+      "cpus": 4,
+      "diskwrite": 0,
+      "disk": 0,
+      "cpu": 0.00356647784652561,
+      "diskread": 0,
+      "mem": 2499819689,
+      "maxmem": 17179869184,
+      "name": "dev-vm",
+      "netout": 680959,
+      "status": "running",
+      "netin": 271449,
+      "vmid": 100,
+      "node": "proxmox"
+    },
+    {
+      "uptime": 0,
+      "serial": 1,
+      "diskwrite": 0,
+      "cpus": 2,
+      "maxdisk": 21474836480,
+      "status": "stopped",
+      "netout": 0,
+      "netin": 0,
+      "vmid": 110,
+      "mem": 0,
+      "diskread": 0,
+      "name": "mcp-server",
+      "maxmem": 4294967296,
+      "disk": 0,
+      "cpu": 0,
+      "node": "proxmox"
+    },
+    {
+      "disk": 0,
+      "template": 1,
+      "cpu": 0,
+      "status": "stopped",
+      "netout": 0,
+      "vmid": 9000,
+      "netin": 0,
+      "mem": 0,
+      "diskread": 0,
+      "name": "ubuntu-cloud-template",
+      "maxmem": 2147483648,
+      "uptime": 0,
+      "serial": 1,
+      "diskwrite": 0,
+      "cpus": 1,
+      "maxdisk": 2361393152,
+      "node": "proxmox"
+    },
+    {
+      "cpu": 0,
+      "disk": 0,
+      "vmid": 203,
+      "netin": 6500959,
+      "netout": 91269,
+      "status": "running",
+      "maxmem": 17179869184,
+      "name": "ollama-server",
+      "mem": 12396097234,
+      "diskread": 0,
+      "cpus": 8,
+      "diskwrite": 0,
+      "serial": 1,
+      "pid": 17175,
+      "uptime": 10674,
+      "maxdisk": 107374182400,
+      "node": "proxmox"
+    },
+    {
+      "diskwrite": 0,
+      "cpus": 4,
+      "uptime": 0,
+      "serial": 1,
+      "maxdisk": 21474836480,
+      "vmid": 102,
+      "netin": 0,
+      "status": "stopped",
+      "netout": 0,
+      "name": "dev-mcp-server",
+      "maxmem": 8589934592,
+      "diskread": 0,
+      "mem": 0,
+      "cpu": 0,
+      "disk": 0,
+      "node": "proxmox"
+    },
+    {
+      "cpus": 4,
+      "diskwrite": 0,
+      "serial": 1,
+      "uptime": 0,
+      "maxdisk": 2361393152,
+      "cpu": 0,
+      "disk": 0,
+      "vmid": 205,
+      "netin": 0,
+      "netout": 0,
+      "status": "stopped",
+      "maxmem": 8589934592,
+      "name": "jenkins-server",
+      "mem": 0,
+      "diskread": 0,
+      "node": "proxmox"
+    },
+    {
+      "mem": 46951599,
+      "diskread": 0,
+      "tags": "ai-created;mcp-managed;pipeline-test;purpose--PURPOSE",
+      "maxmem": 34359738368,
+      "name": "production-database-server",
+      "netout": 1116816,
+      "status": "running",
+      "vmid": 999,
+      "netin": 230169,
+      "disk": 0,
+      "cpu": 0.154271239981206,
+      "maxdisk": 171798691840,
+      "pid": 1437,
+      "uptime": 15966,
+      "cpus": 4,
+      "diskwrite": 0,
+      "node": "proxmox"
+    }
+  ],
+  "storage": [
+    {
+      "type": "dir",
+      "storage": "local",
+      "digest": "837592a0d7953695a1eee7dd74f3c32a0b2f51eb",
+      "content": "backup,iso,vztmpl",
+      "path": "/var/lib/vz"
+    },
+    {
+      "path": "/mnt/data-drive",
+      "storage": "data_drive",
+      "content": "vztmpl,images,iso,rootdir,backup",
+      "digest": "837592a0d7953695a1eee7dd74f3c32a0b2f51eb",
+      "prune-backups": "keep-all=1",
+      "shared": 0,
+      "type": "dir"
+    },
+    {
+      "thinpool": "data",
+      "digest": "837592a0d7953695a1eee7dd74f3c32a0b2f51eb",
+      "content": "images,rootdir",
+      "storage": "local-lvm",
+      "vgname": "pve",
+      "type": "lvmthin"
+    }
+  ],
+  "networks": [
+    {
+      "iface": "wlp7s0",
+      "method": "manual",
+      "families": [
+        "inet"
+      ],
+      "priority": 5,
+      "method6": "manual",
+      "type": "unknown",
+      "node": "proxmox"
+    },
+    {
+      "active": 1,
+      "method6": "manual",
+      "type": "eth",
+      "exists": 1,
+      "iface": "eth1",
+      "method": "manual",
+      "families": [
+        "inet"
+      ],
+      "priority": 3,
+      "node": "proxmox"
+    },
+    {
+      "autostart": 1,
+      "address": "192.168.10.200",
+      "bridge_ports": "eth1",
+      "priority": 4,
+      "cidr": "192.168.10.200/24",
+      "gateway": "192.168.10.1",
+      "iface": "vmbr0",
+      "method": "static",
+      "families": [
+        "inet"
+      ],
+      "bridge_fd": "0",
+      "type": "bridge",
+      "active": 1,
+      "netmask": "24",
+      "method6": "manual",
+      "bridge_stp": "off",
+      "node": "proxmox"
+    },
+    {
+      "method6": "manual",
+      "type": "eth",
+      "families": [
+        "inet"
+      ],
+      "method": "manual",
+      "exists": 1,
+      "iface": "eth0",
+      "node": "proxmox"
+    }
+  ],
+  "templates": [
+    {
+      "status": "stopped",
+      "netout": 0,
+      "netin": 0,
+      "vmid": 9000,
+      "mem": 0,
+      "diskread": 0,
+      "name": "ubuntu-cloud-template",
+      "maxmem": 2147483648,
+      "disk": 0,
+      "template": 1,
+      "cpu": 0,
+      "uptime": 0,
+      "serial": 1,
+      "diskwrite": 0,
+      "cpus": 1,
+      "maxdisk": 2361393152,
+      "node": "proxmox"
+    }
+  ],
+  "discovery_time": "2025-05-30T18:19:56.106600",
+  "proxmox_host": "https://192.168.10.200",
+  "total_resources": 17
+}

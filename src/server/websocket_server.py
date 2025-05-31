@@ -10,6 +10,7 @@ import websockets
 from websockets.server import WebSocketServerProtocol
 from dataclasses import dataclass
 from config import Config
+from src.tools.proxmox_discovery import PROXMOX_TOOLS, handle_proxmox_tool
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +39,7 @@ class MCPWebSocketServer:
     
     def _register_tools(self):
         """Register available tools."""
+        # Register basic test tool
         self.tools["hello_world"] = Tool(
             name="hello_world",
             description="A simple tool that returns 'Hello, World!'",
@@ -48,6 +50,16 @@ class MCPWebSocketServer:
                 "additionalProperties": False
             }
         )
+        
+        # Register Proxmox discovery tools
+        for tool in PROXMOX_TOOLS:
+            self.tools[tool.name] = Tool(
+                name=tool.name,
+                description=tool.description,
+                input_schema=tool.inputSchema
+            )
+        
+        logger.info(f"Registered {len(self.tools)} tools including {len(PROXMOX_TOOLS)} Proxmox discovery tools")
     
     async def handle_request(self, websocket: WebSocketServerProtocol, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle a JSON-RPC request and return response."""
@@ -127,6 +139,37 @@ class MCPWebSocketServer:
         # Call the tool
         if tool_name == "hello_world":
             result_text = "Hello, World!"
+        elif tool_name.startswith("proxmox_"):
+            # Call Proxmox discovery tool
+            try:
+                result_content = await handle_proxmox_tool(tool_name, arguments)
+                
+                # Convert TextContent to WebSocket format
+                content = []
+                for item in result_content:
+                    if hasattr(item, 'text'):
+                        content.append({
+                            "type": "text",
+                            "text": item.text
+                        })
+                    else:
+                        content.append({
+                            "type": "text", 
+                            "text": str(item)
+                        })
+                
+                return {"content": content}
+                
+            except Exception as e:
+                logger.error(f"Error calling Proxmox tool {tool_name}: {e}")
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"❌ Error executing {tool_name}: {e}"
+                        }
+                    ]
+                }
         else:
             result_text = f"Tool {tool_name} called with {arguments}"
         
