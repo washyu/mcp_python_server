@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import argparse
-from src.server.server import main as server_main
+from src.server.mcp_server import main as mcp_main
 from src.server.websocket_server import main as websocket_main
 
 
@@ -25,7 +25,7 @@ def main():
     
     if args.transport == "stdio":
         # Use stdio transport (for Claude Desktop compatibility)
-        asyncio.run(server_main())
+        asyncio.run(mcp_main())
     else:
         # Use WebSocket transport (default)
         print(f"Starting MCP WebSocket server on port {args.port}...", file=sys.stderr)

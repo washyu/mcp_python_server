@@ -5,7 +5,6 @@ Loads settings from environment variables and .env file.
 
 import os
 from pathlib import Path
-from typing import Optional
 from dotenv import load_dotenv
 
 # Load .env file
@@ -23,6 +22,7 @@ class Config:
     PROXMOX_HOST: str = os.getenv('PROXMOX_HOST', '192.168.10.200')
     PROXMOX_USER: str = os.getenv('PROXMOX_USER', 'root@pam')
     PROXMOX_PASSWORD: str = os.getenv('PROXMOX_PASSWORD', '')
+    PROXMOX_API_TOKEN: str = os.getenv('PROXMOX_API_TOKEN', '')  # Format: user@realm!tokenid=uuid
     PROXMOX_VERIFY_SSL: bool = os.getenv('PROXMOX_VERIFY_SSL', 'false').lower() == 'true'
     
     # Ansible Configuration

@@ -15,4 +15,17 @@ dependencies = [
     "websockets>=14.1",
     "aiohttp>=3.11.11",
     "aiofiles>=24.1.0",
+    "cryptography>=42.0.0",
+]
+
+[project.optional-dependencies]
+secure = [
+    "keyring>=25.0.0",  # For system keyring support
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "aioresponses>=0.7.6",  # Mock aiohttp requests
 ]

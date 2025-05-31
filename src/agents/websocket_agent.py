@@ -15,12 +15,13 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 import ollama
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
 from config import Config
 from src.client.websocket_client import MCPWebSocketClient
 from src.utils.setup_wizard import WizardFlow, PROXMOX_WIZARD_FLOW
 from src.utils.profile_manager import ProfileManager
 from src.utils.proxmox_tools import ProxmoxConnectionTest
+from src.tools.proxmox_discovery import handle_proxmox_tool
 
 console = Console()
 
@@ -64,16 +65,24 @@ class WebSocketAIAgent:
     async def run(self):
         """Run the interactive agent."""
         console.print(Panel.fit(
-            f"[bold cyan]WebSocket AI Agent with Wizard Support[/bold cyan]\n"
+            f"[bold cyan]WebSocket AI Agent with Proxmox Discovery[/bold cyan]\n"
             f"Model: {self.model}\n"
             f"Ollama Host: {Config.OLLAMA_HOST}\n"
             f"MCP Server: {self.mcp_uri}\n\n"
-            f"[yellow]Special Commands:[/yellow]\n"
+            f"[yellow]Setup Commands:[/yellow]\n"
             f"  • 'setup proxmox' - Configure Proxmox connection\n"
-            f"  • 'show config' - Show current Proxmox configuration\n"
-            f"  • 'test connection' - Test Proxmox connection\n"
-            f"  • 'create vm' - Quick VM creation wizard\n"
-            f"  • 'quit' - Exit the agent",
+            f"  • 'show config' - Show current configuration\n"
+            f"  • 'test connection' - Test Proxmox connection\n\n"
+            f"[green]Smart Discovery & Hardware Intelligence:[/green]\n"
+            f"  • Basic: 'running vms' | 'mysql servers' | 'vm #203'\n"
+            f"  • Hardware: 'discover hardware' | 'show gpus'\n"
+            f"  • General: 'list nodes' | 'storage pools' | 'templates'\n\n"
+            f"[cyan]AI-Powered Deployment:[/cyan]\n"
+            f"  • Suggestions: 'suggest deployment for ai_training'\n"
+            f"  • Optimization: 'optimize vm placement'\n"
+            f"  • Visualization: 'generate diagram' | 'topology chart'\n"
+            f"  • Intelligence: GPU-aware, resource-optimized\n\n"
+            f"[yellow]Other:[/yellow] 'create vm' | 'quit'",
             title="Welcome"
         ))
         
@@ -262,17 +271,138 @@ Otherwise, respond normally with helpful text."""
             await self._test_connection()
             return True
         
+        elif "create token" in input_lower or "generate token" in input_lower:
+            await self._create_api_token()
+            return True
+        
+        # Proxmox discovery commands (enhanced natural language support)
+        elif any(pattern in input_lower for pattern in [
+            "list nodes", "show nodes", "nodes on", "proxmox nodes", "cluster nodes"
+        ]):
+            await self._run_discovery_tool("proxmox_list_nodes")
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "list vms", "show vms", "list vm", "show vm", "virtual machines", 
+            "vms on", "vm on", "list all vm", "show all vm", "all virtual machine",
+            "running vm", "stopped vm", "running vms", "stopped vms", "vm with", 
+            "vms with", "find vm", "search vm", "vm id", "server with", "find server",
+            "show me", "what is", "windows vm", "ubuntu vm", "linux vm", "mysql server",
+            "nextcloud server", "jenkins server", "docker server", "cores", "memory",
+            "gb", "cpu"
+        ]):
+            # Parse comprehensive filters from natural language
+            filters = self._parse_vm_filters(user_input)
+            
+            # Add helpful context for unusual queries
+            if not filters and any(term in user_input.lower() for term in [
+                "bob", "skynet", "hal", "jarvis", "toaster", "refrigerator", 
+                "bicycle", "amiga", "commodore", "dos", "os/2", "mainframe"
+            ]):
+                console.print("[yellow]💡 Tip: That system type isn't in our homelab! Try:[/yellow]")
+                console.print("  • 'ubuntu servers' | 'windows vms' | 'mysql servers'")
+                console.print("  • 'running vms' | 'stopped machines' | 'vm 203'")
+                return True
+            
+            await self._run_discovery_tool("proxmox_list_vms", filters)
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "list storage", "show storage", "storage pools", "storage on", "disk storage"
+        ]):
+            await self._run_discovery_tool("proxmox_list_storage")
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "list templates", "show templates", "vm templates", "templates on", "template"
+        ]):
+            await self._run_discovery_tool("proxmox_list_templates")
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "discovery status", "inventory status", "status", "discovery", "inventory"
+        ]):
+            await self._run_discovery_tool("proxmox_discovery_status")
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "refresh inventory", "refresh discovery", "refresh", "scan proxmox", "update inventory"
+        ]):
+            await self._run_discovery_tool("proxmox_refresh_inventory")
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "discover hardware", "hardware discovery", "show hardware", "list hardware", 
+            "gpu discovery", "show gpus", "list gpus", "cpu details", "storage details"
+        ]):
+            # Parse node name if specified
+            node_name = None
+            if "node" in input_lower:
+                import re
+                match = re.search(r"node\s+([a-zA-Z0-9\-_]+)", input_lower)
+                if match:
+                    node_name = match.group(1)
+            
+            arguments = {"node_name": node_name} if node_name else {}
+            await self._run_discovery_tool("proxmox_discover_hardware", arguments)
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "suggest deployment", "deployment suggestion", "where to deploy", "best node for",
+            "deploy ai", "deploy database", "deploy web", "deploy compute", "ai training",
+            "training server", "ollama server"
+        ]):
+            # Parse workload type
+            workload_type = "general"  # default
+            if any(term in input_lower for term in ["ai", "training", "ollama", "ml", "machine learning"]):
+                workload_type = "ai_training"
+            elif any(term in input_lower for term in ["database", "mysql", "postgres", "db"]):
+                workload_type = "database"
+            elif any(term in input_lower for term in ["web", "nginx", "apache", "http"]):
+                workload_type = "web_server"
+            elif any(term in input_lower for term in ["compute", "calculation", "processing"]):
+                workload_type = "compute"
+            elif any(term in input_lower for term in ["storage", "backup", "file"]):
+                workload_type = "storage"
+            
+            arguments = {"workload_type": workload_type}
+            await self._run_discovery_tool("proxmox_suggest_deployment", arguments)
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "optimize placement", "vm optimization", "optimize vms", "placement optimization",
+            "migration suggestions", "load balancing", "resource optimization"
+        ]):
+            await self._run_discovery_tool("proxmox_optimize_placement")
+            return True
+        
+        elif any(pattern in input_lower for pattern in [
+            "generate diagram", "infrastructure diagram", "topology diagram", "show diagram",
+            "visual diagram", "infrastructure chart", "resource chart", "topology chart"
+        ]):
+            # Determine diagram type
+            diagram_type = "full"  # default
+            if any(term in input_lower for term in ["topology", "infrastructure"]):
+                diagram_type = "topology"
+            elif any(term in input_lower for term in ["resource", "utilization"]):
+                diagram_type = "resources"
+            
+            arguments = {"format": diagram_type}
+            await self._run_discovery_tool("proxmox_generate_diagram", arguments)
+            return True
+        
         return False
     
-    async def _process_wizard_results(self, wizard_name: str, data: Dict[str, Any], mcp_client=None) -> None:
+    async def _process_wizard_results(self, wizard_name: str, data: Dict[str, Any], mcp_client: Any = None) -> None:
         """Process completed wizard results."""
         if wizard_name == "proxmox_setup":
-            # Test the connection first
-            connection_ok = await ProxmoxConnectionTest.test_and_display(
+            # Test the connection first (and possibly create token)
+            connection_ok, api_token = await ProxmoxConnectionTest.test_and_display(
                 data["proxmox_host"],
                 data["proxmox_user"],
                 data["proxmox_password"],
-                data["verify_ssl"]
+                data["verify_ssl"],
+                offer_token_creation=True
             )
             
             if not connection_ok:
@@ -304,6 +434,11 @@ Otherwise, respond normally with helpful text."""
                 "PROXMOX_VERIFY_SSL": data["verify_ssl"]
             }
             
+            # Add API token if one was created
+            if api_token:
+                config["PROXMOX_API_TOKEN"] = api_token
+                console.print("\n[green]✓ API token added to configuration![/green]")
+            
             # Save and activate the profile
             await self.profile_manager.create_profile(profile_name, config)
             await self.profile_manager.set_active_profile(profile_name)
@@ -314,7 +449,12 @@ Otherwise, respond normally with helpful text."""
             console.print(f"  User: {data['proxmox_user']}")
             
             if connection_ok:
-                console.print("\n[green]✓ Connection verified![/green]")
+                if api_token:
+                    console.print("\n[green]✓ Using API token for authentication[/green]")
+                    console.print("[dim]This provides better reliability with no timeouts.[/dim]")
+                else:
+                    console.print("\n[green]✓ Connection verified![/green]")
+                
                 console.print("\n[yellow]Ready to:[/yellow]")
                 console.print("  • Create VMs with 'create vm'")
                 console.print("  • View configuration with 'show config'")
@@ -428,13 +568,277 @@ These commands will start interactive wizards to guide them through the process.
             console.print("Use 'setup proxmox' to configure your connection.")
             return
         
-        # Test the connection
+        # Test the connection (don't offer token creation here)
         await ProxmoxConnectionTest.test_and_display(
+            profile.get('PROXMOX_HOST'),
+            profile.get('PROXMOX_USER'),
+            profile.get('PROXMOX_PASSWORD'),
+            profile.get('PROXMOX_VERIFY_SSL', 'false'),
+            offer_token_creation=False
+        )
+    
+    async def _create_api_token(self) -> None:
+        """Create a Proxmox API token for MCP use."""
+        # Check if we have a configuration
+        profile = await self.profile_manager.get_profile("main")
+        
+        if not profile:
+            console.print("\n[yellow]No Proxmox configuration found.[/yellow]")
+            console.print("Use 'setup proxmox' to configure your connection first.")
+            return
+        
+        # Check if already using token
+        if profile.get('PROXMOX_API_TOKEN'):
+            console.print("\n[yellow]Already using API token authentication.[/yellow]")
+            if not Confirm.ask("Create a new token anyway?", default=False):
+                return
+        
+        # Create token
+        token = await ProxmoxConnectionTest.create_mcp_token(
             profile.get('PROXMOX_HOST'),
             profile.get('PROXMOX_USER'),
             profile.get('PROXMOX_PASSWORD'),
             profile.get('PROXMOX_VERIFY_SSL', 'false')
         )
+        
+        if token:
+            # Update profile with token
+            profile['PROXMOX_API_TOKEN'] = token
+            await self.profile_manager.update_profile("main", profile)
+            await self.profile_manager.export_to_env("main")
+            
+            console.print("\n[green]✓ Token saved to configuration![/green]")
+            console.print("[yellow]Restart the agent to use the new token.[/yellow]")
+    
+    async def _run_discovery_tool(self, tool_name: str, arguments: dict = None) -> None:
+        """Run a Proxmox discovery tool directly."""
+        try:
+            if arguments:
+                console.print(f"\n[dim]Running {tool_name} with filters...[/dim]")
+            else:
+                console.print(f"\n[dim]Running {tool_name}...[/dim]")
+            
+            # Call the discovery tool directly (bypassing MCP server)
+            result = await handle_proxmox_tool(tool_name, arguments or {})
+            
+            if result:
+                # Display the result
+                for content in result:
+                    if hasattr(content, 'text'):
+                        console.print(content.text)
+                    else:
+                        console.print(str(content))
+            else:
+                console.print("[yellow]No results returned.[/yellow]")
+                
+        except Exception as e:
+            console.print(f"[red]Error running discovery tool: {e}[/red]")
+            console.print("\n[yellow]Make sure you have configured Proxmox credentials first:[/yellow]")
+            console.print("  [cyan]setup proxmox[/cyan]")
+    
+    def _parse_vm_filters(self, user_input: str) -> dict:
+        """Parse natural language input to extract VM filters."""
+        import re
+        input_lower = user_input.lower()
+        filters = {}
+        
+        # Status filters - handle multiple status types and edge cases
+        status_patterns = {
+            "running": r"\brunning\b",
+            "stopped": r"\bstopped\b", 
+            "paused": r"\bpaused\b|\bsuspended\b"
+        }
+        
+        for status_name, pattern in status_patterns.items():
+            if re.search(pattern, input_lower):
+                filters["status"] = status_name
+                break
+        
+        # ID filter - look for patterns like "id 44", "id of 44", "with id 44"
+        id_patterns = [
+            r"id\s+(\d+)",
+            r"id\s+of\s+(\d+)", 
+            r"with\s+id\s+(\d+)",
+            r"vm\s+(\d{1,4})",  # VM IDs are typically 1-4 digits
+            r"(?<!windows\s)(?<!server\s)server\s+(\d{1,4})",  # Avoid "windows server 2022"
+            r"machine\s+(\d{1,4})",
+            r"#(\d{1,4})"  # hashtag notation
+        ]
+        for pattern in id_patterns:
+            match = re.search(pattern, input_lower)
+            if match:
+                vm_id = match.group(1)
+                # Validate ID is reasonable (1-9999)
+                try:
+                    id_int = int(vm_id)
+                    if 1 <= id_int <= 9999:
+                        filters["id"] = id_int
+                    break
+                except ValueError:
+                    continue  # Skip invalid IDs
+        
+        # Name filters - look for specific server names with improved matching
+        name_patterns = [
+            # Service-specific patterns (prioritize these)
+            r"(nextcloud|jenkins|mysql|database|web|docker|nginx|apache|ollama|production|dev|test)\s*server",
+            r"(nextcloud|jenkins|mysql|database|web|docker|nginx|apache|ollama|production|dev|test)\s*machine",
+            r"(nextcloud|jenkins|mysql|database|web|docker|nginx|apache|ollama)",
+            # Environment patterns
+            r"(production|development|staging|test)\s*(server|machine|vm|environment)",
+            r"(prod|dev|stage|test)\s*(server|machine|vm)",
+            # Generic patterns with better character support
+            r"named?\s+([a-zA-Z0-9\-_\.]+)",
+            r"called\s+([a-zA-Z0-9\-_\.]+)",
+            # Quoted names
+            r'"([a-zA-Z0-9\-_\.\s]+)"',
+            r"'([a-zA-Z0-9\-_\.\s]+)'"
+        ]
+        for pattern in name_patterns:
+            match = re.search(pattern, input_lower)
+            if match and match.group(1) not in ['of', 'the', 'a', 'an', 'with', 'server', 'machine', 'vm']:
+                filters["name"] = match.group(1).strip()
+                break
+        
+        # OS/Distribution filters - only apply if no name filter found for service keywords
+        service_keywords = ["mysql", "nextcloud", "docker", "production", "development", "dev", "test"]
+        should_apply_os_filter = True
+        
+        # If we already found a name filter that matches a service, don't override with OS
+        if "name" in filters and any(keyword in filters["name"] for keyword in service_keywords):
+            should_apply_os_filter = False
+        
+        if should_apply_os_filter:
+            os_patterns = {
+                # Specific version patterns (higher priority)
+                "ubuntu 22.04": r"ubuntu\s*22\.?04|jammy|22\.04",
+                "ubuntu 20.04": r"ubuntu\s*20\.?04|focal|20\.04",
+                "ubuntu 18.04": r"ubuntu\s*18\.?04|bionic|18\.04",
+                "windows server 2022": r"windows?\s*(server\s*)?2022|w2k22|ws2022",
+                "windows server 2019": r"windows?\s*(server\s*)?2019|w2k19|ws2019",
+                # General OS patterns
+                "windows": r"windows|win(?!g)|w2k",
+                "ubuntu": r"ubuntu(?!\s*\d)",  # Ubuntu but not followed by version
+                "debian": r"debian",
+                "centos": r"centos|rhel|redhat|rocky|alma",
+                "linux": r"linux(?!\s*(mint|lite))",  # Linux but exclude specific distros
+                # Service-based OS detection (only if no name match)
+                "nextcloud": r"nextcloud",
+                "mysql": r"mysql|mariadb",
+                "docker": r"docker|container",
+                # Application patterns
+                "web": r"web\s*server|nginx|apache|httpd",
+                "database": r"(?<!mysql\s)database|db\s*server|postgres|mongodb"
+            }
+            
+            for os_name, pattern in os_patterns.items():
+                if re.search(pattern, input_lower):
+                    filters["os"] = os_name
+                    break
+        
+        # Memory filters - support decimal values and multiple units
+        memory_patterns = [
+            # GB patterns with decimal support
+            r"with\s+([0-9.]+)\s*gb",
+            r"more\s+than\s+([0-9.]+)\s*gb",
+            r"at\s+least\s+([0-9.]+)\s*gb",
+            r"([0-9.]+)\s*gb\s+memory",
+            r"([0-9.]+)\s*gb\s+ram",
+            r"over\s+([0-9.]+)\s*gb",
+            r"above\s+([0-9.]+)\s*gb",
+            # MB patterns
+            r"with\s+(\d+)\s*mb",
+            r"([0-9.]+)\s*mb\s+memory",
+            # Exact memory
+            r"exactly\s+([0-9.]+)\s*gb"
+        ]
+        for pattern in memory_patterns:
+            match = re.search(pattern, input_lower)
+            if match:
+                try:
+                    memory_value = float(match.group(1))
+                    # Convert to MB based on unit detection
+                    if "mb" in pattern:
+                        filters["min_memory"] = int(memory_value)  # Already in MB
+                    else:
+                        filters["min_memory"] = int(memory_value * 1024)  # GB to MB
+                    break
+                except ValueError:
+                    continue  # Skip invalid memory values
+        
+        # CPU filters - support various CPU terminology and edge cases
+        cpu_patterns = [
+            r"with\s+([0-9.]+)\s+cores?",
+            r"with\s+([0-9.]+)\s+cpus?",
+            r"more\s+than\s+([0-9.]+)\s+cores?",
+            r"at\s+least\s+([0-9.]+)\s+cores?",
+            r"([0-9.]+)\s+cores?",
+            r"([0-9.]+)\s+cpus?",
+            r"over\s+([0-9.]+)\s+cores?",
+            r"above\s+([0-9.]+)\s+cores?",
+            # Alternative terminology
+            r"([0-9.]+)\s+processors?",
+            r"([0-9.]+)\s+vcpus?",
+            # Special cases
+            r"single\s+core",  # matches to 1
+            r"dual\s+core",   # matches to 2
+            r"quad\s+core",   # matches to 4
+            r"multi\s+core"   # matches to 2+ (we'll use 2)
+        ]
+        
+        for pattern in cpu_patterns:
+            match = re.search(pattern, input_lower)
+            if match:
+                try:
+                    if "single" in pattern:
+                        filters["min_cpu"] = 1
+                    elif "dual" in pattern:
+                        filters["min_cpu"] = 2
+                    elif "quad" in pattern:
+                        filters["min_cpu"] = 4
+                    elif "multi" in pattern:
+                        filters["min_cpu"] = 2
+                    else:
+                        cpu_value = float(match.group(1))
+                        # Only accept reasonable CPU values (0.1 to 64)
+                        if 0.1 <= cpu_value <= 64:
+                            filters["min_cpu"] = int(cpu_value)  # Round down for minimums
+                    break
+                except (ValueError, IndexError):
+                    continue  # Skip invalid CPU values
+        
+        # Handle complex queries and provide warnings for conflicting filters
+        self._validate_and_warn_filters(filters, user_input)
+        
+        return filters
+    
+    def _validate_and_warn_filters(self, filters: dict, user_input: str) -> None:
+        """Validate filters and warn about potential issues."""
+        # Check for conflicting OS filters
+        if "os" in filters:
+            input_lower = user_input.lower()
+            
+            # Detect multiple OS mentions for potential conflicts
+            os_keywords = ["windows", "ubuntu", "debian", "centos", "linux"]
+            mentioned_os = [os for os in os_keywords if os in input_lower]
+            
+            if len(mentioned_os) > 1:
+                # User mentioned multiple OS types, we already picked the best match
+                # This is just for validation - no action needed
+                pass
+        
+        # Validate memory ranges
+        if "min_memory" in filters:
+            if filters["min_memory"] <= 0:
+                filters.pop("min_memory")  # Remove invalid memory filter
+            elif filters["min_memory"] > 65536:  # More than 64GB seems excessive
+                filters["min_memory"] = 65536  # Cap at reasonable limit
+        
+        # Validate CPU ranges  
+        if "min_cpu" in filters:
+            if filters["min_cpu"] <= 0:
+                filters.pop("min_cpu")  # Remove invalid CPU filter
+            elif filters["min_cpu"] > 32:  # More than 32 cores seems excessive for homelab
+                filters["min_cpu"] = 32  # Cap at reasonable limit
 
 
 async def main():
