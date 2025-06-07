@@ -11,7 +11,7 @@ from pathlib import Path
 
 import anyio
 import mcp.types as types
-from mcp.client import ClientSession
+from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 

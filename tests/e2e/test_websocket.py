@@ -5,8 +5,10 @@ Test WebSocket MCP server and client together.
 
 import asyncio
 import sys
-from websocket_server import MCPWebSocketServer
-from websocket_client import test_websocket_client
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+from server.websocket_server import MCPWebSocketServer
+from client.websocket_client import test_websocket_client
 
 
 async def run_test():

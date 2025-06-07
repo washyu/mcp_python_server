@@ -5,6 +5,7 @@ Test script for Proxmox API token creation.
 
 import asyncio
 import sys
+import pytest
 from pathlib import Path
 
 # Add parent directory to path
@@ -16,6 +17,7 @@ from rich.console import Console
 console = Console()
 
 
+@pytest.mark.requires_proxmox
 async def test_token_creation():
     """Test creating an API token."""
     # Test credentials - you'll need to update these

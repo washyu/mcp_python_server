@@ -11,6 +11,7 @@ from websockets.server import WebSocketServerProtocol
 from dataclasses import dataclass
 from config import Config
 from src.tools.proxmox_discovery import PROXMOX_TOOLS, handle_proxmox_tool
+from src.tools.vm_creation import create_vm_tool
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -59,7 +60,57 @@ class MCPWebSocketServer:
                 input_schema=tool.inputSchema
             )
         
-        logger.info(f"Registered {len(self.tools)} tools including {len(PROXMOX_TOOLS)} Proxmox discovery tools")
+        # Register VM creation tool
+        self.tools["create_vm"] = Tool(
+            name="create_vm",
+            description="Create a new VM from cloud-init template with automatic resource placement",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "VM name (e.g., 'jenkins-server', 'dev-vm-1')"
+                    },
+                    "cores": {
+                        "type": "integer", 
+                        "description": "CPU cores (default: 2)",
+                        "default": 2
+                    },
+                    "memory_gb": {
+                        "type": "number",
+                        "description": "RAM in GB (default: 4)",
+                        "default": 4
+                    },
+                    "disk_gb": {
+                        "type": "integer",
+                        "description": "Disk size in GB (default: 20)",
+                        "default": 20
+                    },
+                    "template_id": {
+                        "type": "integer",
+                        "description": "Template VM ID (default: 9000 for ubuntu-cloud-template)",
+                        "default": 9000
+                    },
+                    "node": {
+                        "type": "string",
+                        "description": "Target node name (auto-selected if not specified)"
+                    },
+                    "install_docker": {
+                        "type": "boolean",
+                        "description": "Install Docker during VM creation (default: false)",
+                        "default": False
+                    },
+                    "install_qemu_agent": {
+                        "type": "boolean", 
+                        "description": "Install QEMU guest agent (recommended: true)",
+                        "default": True
+                    }
+                },
+                "required": ["name"]
+            }
+        )
+        
+        logger.info(f"Registered {len(self.tools)} tools including {len(PROXMOX_TOOLS)} Proxmox discovery tools and VM creation")
     
     async def handle_request(self, websocket: WebSocketServerProtocol, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle a JSON-RPC request and return response."""
@@ -139,6 +190,42 @@ class MCPWebSocketServer:
         # Call the tool
         if tool_name == "hello_world":
             result_text = "Hello, World!"
+        elif tool_name == "create_vm":
+            # Call VM creation tool
+            try:
+                result = await create_vm_tool(**arguments)
+                
+                if result.get("success"):
+                    message = f"✅ {result['message']}\n"
+                    message += f"VM ID: {result['vm_id']}\n"
+                    message += f"Node: {result['node']}\n"
+                    if result.get('ip_address'):
+                        message += f"IP Address: {result['ip_address']}\n"
+                        message += f"SSH Access: {result['ssh_access']}\n"
+                    message += f"Services: {', '.join(result.get('services', []))}"
+                else:
+                    message = f"❌ {result['message']}\n"
+                    message += f"Error: {result.get('error', 'Unknown error')}"
+                
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": message
+                        }
+                    ]
+                }
+                
+            except Exception as e:
+                logger.error(f"Error creating VM: {e}")
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"❌ Failed to create VM: {e}"
+                        }
+                    ]
+                }
         elif tool_name.startswith("proxmox_"):
             # Call Proxmox discovery tool
             try:

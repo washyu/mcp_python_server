@@ -5,12 +5,14 @@ Quick test to check Ollama connectivity.
 
 import os
 import sys
+import pytest
 import ollama
 from rich.console import Console
 from config import Config
 
 console = Console()
 
+@pytest.mark.requires_ollama
 def test_ollama():
     """Test Ollama connection with helpful output."""
     

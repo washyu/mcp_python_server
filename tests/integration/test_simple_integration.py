@@ -4,10 +4,12 @@ Simple integration test without subprocess complexity.
 """
 
 import asyncio
+import pytest
 from config import Config
 import ollama
 
 
+@pytest.mark.requires_ollama
 async def test_integration():
     """Test Ollama and MCP server integration."""
     print("Simple Integration Test")

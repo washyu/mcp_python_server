@@ -214,7 +214,7 @@ class TestHardwareDiscovery:
         assert nvme is not None
         assert nvme.type == "NVMe SSD"
         assert "Samsung" in nvme.model
-        assert "1.0TB" in nvme.size
+        assert "931.5GB" in nvme.size
         
         # Check HDD
         hdd = next((s for s in storage if "Seagate" in s.model), None)
@@ -248,7 +248,7 @@ class TestHardwareDiscovery:
         assert client._format_storage_size(0) == "Unknown"
         assert client._format_storage_size(1024) == "1.0KB"
         assert client._format_storage_size(1024**3) == "1.0GB"
-        assert client._format_storage_size(1000204886016) == "931.3GB"  # 1TB drive
+        assert client._format_storage_size(1000204886016) == "931.5GB"  # 1TB drive
     
     @pytest.mark.asyncio
     async def test_discover_node_hardware_integration(self, sample_pci_data, sample_cpu_data, sample_disk_data):

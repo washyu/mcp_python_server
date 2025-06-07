@@ -5,7 +5,9 @@ Direct test of MCP server functionality.
 
 import asyncio
 import sys
-from server import app
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+from server.server import app
 from mcp.server.stdio import stdio_server
 
 
@@ -14,7 +16,7 @@ async def test_direct():
     print("Testing MCP server directly...")
     
     # Import the actual handler functions
-    from server import list_tools, call_tool
+    from server.server import list_tools, call_tool
     
     # Get available tools
     tools = await list_tools()

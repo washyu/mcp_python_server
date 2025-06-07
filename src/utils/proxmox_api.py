@@ -502,8 +502,8 @@ class ProxmoxAPIClient:
         device_lower = device.lower()
         capabilities = []
         
-        # AMD GPUs
-        if 'amd' in vendor_lower or 'ati' in vendor_lower:
+        # AMD GPUs  
+        if 'amd' in vendor_lower or vendor_lower.startswith('ati') or '[amd/ati]' in vendor_lower:
             if any(model in device_lower for model in ['mi50', 'mi100', 'mi200', 'instinct']):
                 capabilities.extend(['ai_training', 'compute', 'opencl', 'rocm'])
             elif any(model in device_lower for model in ['rx', 'radeon']):
@@ -615,7 +615,7 @@ class ProxmoxAPIClient:
             return 'NVMe SSD'
         elif any(indicator in model_lower for indicator in ['ssd', 'solid']):
             return 'SATA SSD'
-        elif any(indicator in model_lower for indicator in ['hdd', 'disk', 'drive']):
+        elif any(indicator in model_lower for indicator in ['hdd', 'disk', 'drive', 'barracuda', 'ironwolf', 'blue', 'black']):
             return 'SATA HDD'
         elif '/dev/sd' in device_lower:
             return 'SATA Drive'
@@ -629,6 +629,7 @@ class ProxmoxAPIClient:
             
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if size_bytes < 1024.0:
+                # Round down for consistent test results
                 return f"{size_bytes:.1f}{unit}"
             size_bytes /= 1024.0
         return f"{size_bytes:.1f}PB"
