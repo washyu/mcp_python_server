@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from config import Config
 from src.tools.proxmox_discovery import PROXMOX_TOOLS, handle_proxmox_tool
 from src.tools.vm_creation import create_vm_tool
+from src.tools.agent_homelab_tools import AGENT_HOMELAB_TOOLS, handle_agent_homelab_tool
+from src.tools.lxd_tools import LXD_TOOLS, handle_lxd_tool
+from src.tools.homelab_tools import HOMELAB_TOOLS, handle_homelab_tool
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -51,6 +54,30 @@ class MCPWebSocketServer:
                 "additionalProperties": False
             }
         )
+        
+        # Register Agent-driven homelab automation tools (PRIORITY 1)
+        for tool in AGENT_HOMELAB_TOOLS:
+            self.tools[tool.name] = Tool(
+                name=tool.name,
+                description=tool.description,
+                input_schema=tool.inputSchema
+            )
+        
+        # Register LXD container management tools
+        for tool in LXD_TOOLS:
+            self.tools[tool.name] = Tool(
+                name=tool.name,
+                description=tool.description,
+                input_schema=tool.inputSchema
+            )
+        
+        # Register user guidance tools
+        for tool in HOMELAB_TOOLS:
+            self.tools[tool.name] = Tool(
+                name=tool.name,
+                description=tool.description,
+                input_schema=tool.inputSchema
+            )
         
         # Register Proxmox discovery tools
         for tool in PROXMOX_TOOLS:
@@ -110,7 +137,13 @@ class MCPWebSocketServer:
             }
         )
         
-        logger.info(f"Registered {len(self.tools)} tools including {len(PROXMOX_TOOLS)} Proxmox discovery tools and VM creation")
+        total_tools = len(AGENT_HOMELAB_TOOLS) + len(LXD_TOOLS) + len(HOMELAB_TOOLS) + len(PROXMOX_TOOLS) + 2  # +2 for hello_world and create_vm
+        logger.info(f"Registered {total_tools} WebSocket MCP tools:")
+        logger.info(f"  🤖 Agent Automation: {len(AGENT_HOMELAB_TOOLS)} tools")
+        logger.info(f"  📦 LXD Containers: {len(LXD_TOOLS)} tools") 
+        logger.info(f"  👥 User Guidance: {len(HOMELAB_TOOLS)} tools")
+        logger.info(f"  🏗️  Proxmox Discovery: {len(PROXMOX_TOOLS)} tools")
+        logger.info(f"  🖥️  VM Management: 2 tools")
     
     async def handle_request(self, websocket: WebSocketServerProtocol, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle a JSON-RPC request and return response."""
@@ -226,37 +259,41 @@ class MCPWebSocketServer:
                         }
                     ]
                 }
+        elif tool_name in [tool.name for tool in AGENT_HOMELAB_TOOLS]:
+            # Call agent-driven homelab automation tool
+            try:
+                result_content = await handle_agent_homelab_tool(tool_name, arguments)
+                return self._convert_content_to_websocket(result_content)
+            except Exception as e:
+                logger.error(f"Error calling agent homelab tool {tool_name}: {e}")
+                return self._create_error_response(tool_name, e)
+                
+        elif tool_name in [tool.name for tool in LXD_TOOLS]:
+            # Call LXD container management tool
+            try:
+                result_content = await handle_lxd_tool(tool_name, arguments)
+                return self._convert_content_to_websocket(result_content)
+            except Exception as e:
+                logger.error(f"Error calling LXD tool {tool_name}: {e}")
+                return self._create_error_response(tool_name, e)
+                
+        elif tool_name in [tool.name for tool in HOMELAB_TOOLS]:
+            # Call user guidance tool
+            try:
+                result_content = await handle_homelab_tool(tool_name, arguments)
+                return self._convert_content_to_websocket(result_content)
+            except Exception as e:
+                logger.error(f"Error calling homelab guidance tool {tool_name}: {e}")
+                return self._create_error_response(tool_name, e)
+                
         elif tool_name.startswith("proxmox_"):
             # Call Proxmox discovery tool
             try:
                 result_content = await handle_proxmox_tool(tool_name, arguments)
-                
-                # Convert TextContent to WebSocket format
-                content = []
-                for item in result_content:
-                    if hasattr(item, 'text'):
-                        content.append({
-                            "type": "text",
-                            "text": item.text
-                        })
-                    else:
-                        content.append({
-                            "type": "text", 
-                            "text": str(item)
-                        })
-                
-                return {"content": content}
-                
+                return self._convert_content_to_websocket(result_content)
             except Exception as e:
                 logger.error(f"Error calling Proxmox tool {tool_name}: {e}")
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"❌ Error executing {tool_name}: {e}"
-                        }
-                    ]
-                }
+                return self._create_error_response(tool_name, e)
         else:
             result_text = f"Tool {tool_name} called with {arguments}"
         
@@ -265,6 +302,33 @@ class MCPWebSocketServer:
                 {
                     "type": "text",
                     "text": result_text
+                }
+            ]
+        }
+    
+    def _convert_content_to_websocket(self, result_content) -> Dict[str, Any]:
+        """Convert TextContent list to WebSocket format."""
+        content = []
+        for item in result_content:
+            if hasattr(item, 'text'):
+                content.append({
+                    "type": "text",
+                    "text": item.text
+                })
+            else:
+                content.append({
+                    "type": "text", 
+                    "text": str(item)
+                })
+        return {"content": content}
+    
+    def _create_error_response(self, tool_name: str, error: Exception) -> Dict[str, Any]:
+        """Create standardized error response."""
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"❌ Error executing {tool_name}: {error}"
                 }
             ]
         }

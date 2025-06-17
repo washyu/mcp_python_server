@@ -15,8 +15,8 @@ class Config:
     """Configuration settings for the MCP server."""
     
     # Ollama Configuration
-    OLLAMA_HOST: str = os.getenv('OLLAMA_HOST', 'http://192.168.10.185:11434')
-    OLLAMA_MODEL: str = os.getenv('OLLAMA_MODEL', 'llama2')
+    OLLAMA_HOST: str = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
+    OLLAMA_MODEL: str = os.getenv('OLLAMA_MODEL', 'deepseek-r1:8b')  # Great for reasoning tasks!
     
     # Proxmox Configuration
     PROXMOX_HOST: str = os.getenv('PROXMOX_HOST', '192.168.10.200')

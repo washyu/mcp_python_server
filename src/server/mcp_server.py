@@ -1,5 +1,15 @@
 """
-Modern MCP server using FastMCP for Proxmox discovery tools.
+Universal Homelab MCP Server - Infrastructure Automation Toolkit for AI Agents
+
+This MCP server provides tools that enable ANY AI agent to automatically:
+- Discover and assess hardware capabilities
+- Install and configure virtualization platforms (Proxmox, LXD, Docker)
+- Deploy services with smart defaults and best practices
+- Troubleshoot and optimize homelab infrastructure
+- Make informed technology choices with comparative analysis
+
+Primary Purpose: Let AI agents build complete homelab environments autonomously
+with minimal human intervention, while educating users about the decisions made.
 """
 
 import asyncio
@@ -15,35 +25,87 @@ from src.tools.vm_creation import (
     delete_vm_tool,
     get_vm_status_tool
 )
+from src.tools.homelab_tools import HOMELAB_TOOLS, handle_homelab_tool
+from src.tools.lxd_tools import LXD_TOOLS, handle_lxd_tool
+from src.tools.agent_homelab_tools import AGENT_HOMELAB_TOOLS, handle_agent_homelab_tool
 
 logger = logging.getLogger(__name__)
 
 
-class ProxmoxMCPServer:
-    """MCP server that provides Proxmox discovery tools."""
+class HomelabMCPServer:
+    """
+    Universal Homelab MCP Server - Infrastructure Automation Toolkit
     
-    def __init__(self, name: str = "proxmox-discovery-server"):
+    Enables ANY AI agent to automatically provision, configure, and manage
+    complete homelab environments with minimal human intervention.
+    
+    Core Capabilities:
+    - Autonomous infrastructure setup (Proxmox, LXD, Docker)
+    - Smart technology selection with comparative analysis
+    - Service deployment with industry best practices
+    - Educational explanations of all decisions made
+    """
+    
+    def __init__(self, name: str = "universal-homelab-mcp"):
         """Initialize the MCP server."""
         self.name = name
         self.mcp = FastMCP(name)
         self._register_tools()
     
     def _register_tools(self):
-        """Register all Proxmox discovery tools."""
-        logger.info("Registering Proxmox discovery tools...")
+        """Register all MCP tools for AI-driven homelab automation."""
+        logger.info("Registering Universal Homelab MCP tools...")
         
-        for tool in PROXMOX_TOOLS:
-            logger.info(f"Registering tool: {tool.name}")
+        # PRIORITY 1: Agent-driven automation tools (main feature)
+        for tool in AGENT_HOMELAB_TOOLS:
+            logger.info(f"Registering Agent tool: {tool.name}")
             
-            # Create a closure to capture the tool name
-            def make_handler(tool_name: str):
+            def make_agent_handler(tool_name: str):
+                async def handler(**kwargs) -> List[TextContent]:
+                    return await handle_agent_homelab_tool(tool_name, kwargs)
+                return handler
+            
+            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+                make_agent_handler(tool.name)
+            )
+        
+        # PRIORITY 2: Infrastructure discovery and management tools
+        for tool in PROXMOX_TOOLS:
+            logger.info(f"Registering Infrastructure tool: {tool.name}")
+            
+            def make_proxmox_handler(tool_name: str):
                 async def handler(**kwargs) -> List[TextContent]:
                     return await handle_proxmox_tool(tool_name, kwargs)
                 return handler
             
-            # Register the tool with FastMCP
             self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
-                make_handler(tool.name)
+                make_proxmox_handler(tool.name)
+            )
+        
+        # PRIORITY 3: Container platform tools  
+        for tool in LXD_TOOLS:
+            logger.info(f"Registering Container tool: {tool.name}")
+            
+            def make_lxd_handler(tool_name: str):
+                async def handler(**kwargs) -> List[TextContent]:
+                    return await handle_lxd_tool(tool_name, kwargs)
+                return handler
+            
+            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+                make_lxd_handler(tool.name)
+            )
+        
+        # PRIORITY 4: User guidance tools (when agent needs human input)
+        for tool in HOMELAB_TOOLS:
+            logger.info(f"Registering Guidance tool: {tool.name}")
+            
+            def make_homelab_handler(tool_name: str):
+                async def handler(**kwargs) -> List[TextContent]:
+                    return await handle_homelab_tool(tool_name, kwargs)
+                return handler
+            
+            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+                make_homelab_handler(tool.name)
             )
         
         # Register VM creation tool
@@ -73,7 +135,13 @@ class ProxmoxMCPServer:
             description="Get current status and details of a VM"
         )(self._get_vm_status_handler)
         
-        logger.info(f"Successfully registered {len(PROXMOX_TOOLS) + 5} tools (including VM management)")
+        total_tools = len(AGENT_HOMELAB_TOOLS) + len(PROXMOX_TOOLS) + len(LXD_TOOLS) + len(HOMELAB_TOOLS) + 5
+        logger.info(f"Successfully registered {total_tools} MCP tools for AI-driven homelab automation")
+        logger.info(f"  🤖 Agent Automation: {len(AGENT_HOMELAB_TOOLS)} tools (PRIMARY FEATURE)")
+        logger.info(f"  🏗️  Infrastructure: {len(PROXMOX_TOOLS)} tools") 
+        logger.info(f"  📦 Containers: {len(LXD_TOOLS)} tools")
+        logger.info(f"  👥 User Guidance: {len(HOMELAB_TOOLS)} tools")
+        logger.info(f"  🖥️  VM Management: 5 tools")
     
     async def _create_vm_handler(self, **kwargs) -> List[TextContent]:
         """Handle VM creation requests."""
@@ -199,7 +267,7 @@ async def main():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    server = ProxmoxMCPServer()
+    server = HomelabMCPServer()
     
     # Default to stdio transport for MCP compatibility
     await server.run_stdio()
