@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from src.utils.proxmox_api import ProxmoxAPIClient, ProxmoxNode
 from src.utils.credential_manager import get_credential_manager
-from config import Config
+from src.utils.config import Config
 
 logger = logging.getLogger(__name__)
 

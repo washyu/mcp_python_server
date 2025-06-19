@@ -2,7 +2,7 @@ import asyncio
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 import mcp.server.stdio
-from config import Config
+from src.utils.config import Config
 
 # Create the MCP server instance
 app = Server(Config.MCP_SERVER_NAME)

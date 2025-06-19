@@ -238,7 +238,7 @@ class CredentialManager:
     
     async def migrate_from_env(self) -> None:
         """Migrate credentials from environment/config to secure storage."""
-        from config import Config
+        from src.utils.config import Config
         
         migrations = [
             ("proxmox", "password", Config.PROXMOX_PASSWORD),

@@ -6,7 +6,7 @@ Provides backward compatibility with existing Config class.
 import os
 import asyncio
 from typing import Optional, Dict, Any
-from config import Config as BaseConfig
+from src.utils.config import Config as BaseConfig
 from src.utils.credential_manager import get_credential_manager
 import logging
 

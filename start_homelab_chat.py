@@ -9,6 +9,8 @@ import os
 import sys
 import json
 import logging
+import readline
+import atexit
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
@@ -38,6 +40,8 @@ from src.tools.homelab_tools import HOMELAB_TOOLS, handle_homelab_tool
 from src.tools.agent_homelab_tools import AGENT_HOMELAB_TOOLS, handle_agent_homelab_tool
 from src.tools.lxd_tools import LXD_TOOLS, handle_lxd_tool
 from src.tools.proxmox_discovery import PROXMOX_TOOLS, handle_proxmox_tool
+from src.tools.homelab_context_tools import HOMELAB_CONTEXT_TOOLS, handle_homelab_context_tool
+from src.tools.streaming_tool_manager import stream_with_tool_execution
 
 
 # Configure logging
@@ -71,11 +75,14 @@ class HomelabChatInterface:
         self.conversation_history: List[Dict[str, str]] = []
         self.server_task: Optional[asyncio.Task] = None
         self.verbose_logging = False
-        # Combine all available MCP tools
-        self.mcp_tools = AGENT_HOMELAB_TOOLS + LXD_TOOLS + HOMELAB_TOOLS + PROXMOX_TOOLS
+        # Combine all available MCP tools - CONTEXT tools first for priority
+        self.mcp_tools = HOMELAB_CONTEXT_TOOLS + AGENT_HOMELAB_TOOLS + LXD_TOOLS + HOMELAB_TOOLS + PROXMOX_TOOLS
         self.tool_execution_enabled = True
         self.current_server = None  # Track the current working server
         self._detected_hostname = None
+        
+        # Set up readline for command history and editing
+        self._setup_readline()
         
     def print(self, message: str, style: Optional[str] = None):
         """Print message with optional styling."""
@@ -755,6 +762,40 @@ ALWAYS USE: {self.current_server}
 
         enhanced_prompt = f"""{server_context}{base_prompt}
 
+🏠 HOMELAB CONTEXT MANAGEMENT - ALWAYS DO THIS FIRST! 🏠
+
+CRITICAL: When a user mentions ANY device in their homelab, you MUST:
+
+1. **Check if device exists in context:**
+   - **EXECUTE_TOOL:** list-homelab-devices {{}}
+   
+2. **If device is new or needs updating:**
+   - **EXECUTE_TOOL:** add-homelab-device {{"ip_address": "X.X.X.X", "hostname": "NAME", "role": "ROLE", "device_type": "TYPE"}}
+   
+3. **Never assume based on hostname!**
+   - "proxmoxpi" might run Raspbian, not Proxmox
+   - "docker-host" might be a bare metal server, not a container
+   - ALWAYS ASK or discover what's actually running
+
+4. **When user says "my homelab consists of..."**
+   - Immediately use add-homelab-device to record each device
+   - Ask for clarification: OS, services, purpose
+   - Update context before suggesting ANY actions
+
+DEVICE ROLES TO USE:
+- "development" = Dev machines (exclude from deployments)
+- "infrastructure_host" = Proxmox/ESXi hosts
+- "service_host" = Devices for running services (Pi, VMs, containers)
+- "network_device" = Routers, switches
+- "storage_device" = NAS devices
+
+EXAMPLE:
+User: "My homelab is just my Pi called proxmoxpi"
+You: Let me add that to the homelab context...
+**EXECUTE_TOOL:** add-homelab-device {{"ip_address": "192.168.X.X", "hostname": "proxmoxpi", "role": "service_host", "device_type": "raspberry_pi", "notes": "Pi running Raspbian (not Proxmox)"}}
+
+Now I know it's a Pi with Raspbian, not a Proxmox host!
+
 IMPORTANT HARDWARE DISCOVERY & RESOURCE PLANNING:
 
 Discovered Systems:
@@ -795,8 +836,13 @@ When the user asks you to install or configure something, you MUST:
 1. EXECUTE the appropriate MCP tool immediately - don't just mention it
 2. Use this exact format to call tools:
    **EXECUTE_TOOL:** tool_name {{"parameter": "value"}}
-3. PAY ATTENTION to the target hostname the user specifies - use their exact hostname/IP
-4. Examples with current server context:
+3. IMPORTANT JSON FORMATTING:
+   - Use double quotes around parameter names: "host", "name", etc.
+   - Use double quotes around string values: "proxmoxpi.local", "my-container"
+   - NO EXTRA QUOTES: Write "proxmoxpi.local" NOT ""proxmoxpi.local""
+   - Valid JSON only: {{"host": "proxmoxpi.local", "name": "react-site"}}
+4. PAY ATTENTION to the target hostname the user specifies - use their exact hostname/IP
+5. Examples with current server context:
    {f'- To install LXD: **EXECUTE_TOOL:** install-lxd {{"host": "{self.current_server}"}}' if self.current_server else '- To install LXD: **EXECUTE_TOOL:** install-lxd {"host": "USER_SPECIFIED_HOSTNAME"}'}
    {f'- To list containers: **EXECUTE_TOOL:** list-lxd-containers {{"host": "{self.current_server}"}}' if self.current_server else '- To list containers: **EXECUTE_TOOL:** list-lxd-containers {"host": "USER_SPECIFIED_HOSTNAME"}'}
    {f'- To list VMs: **EXECUTE_TOOL:** proxmox_list_vms {{"host": "{self.current_server}"}}' if self.current_server else '- To list VMs: **EXECUTE_TOOL:** proxmox_list_vms {"host": "USER_SPECIFIED_HOSTNAME"}'}
@@ -832,6 +878,94 @@ When user says common phrases, translate them to the current server:
 - "show me the vms" → **EXECUTE_TOOL:** proxmox_list_vms {{"host": "{self.current_server or "CURRENT_SERVER"}"}}
 - "what services are installed" → **EXECUTE_TOOL:** get-homelab-status {{"host": "{self.current_server or "CURRENT_SERVER"}"}}
 - "kill vm 123" → **EXECUTE_TOOL:** manage-vm {{"action": "stop", "vm_id": "123", "host": "{self.current_server or "CURRENT_SERVER"}"}}
+
+📦 SERVICE SETUP PATTERNS - UNDERSTAND WHAT USERS WANT:
+When user asks to "set up" a service, they want the FULL STACK installed and running:
+
+- "set up a React site" means:
+  1. Create a container/VM
+  2. Install Node.js and npm
+  3. Run `npx create-react-app my-app` to create default React app
+  4. Start the development server with `npm start`
+  5. Configure it to be accessible from the network
+
+- "set up a web server" means:
+  1. Create a container/VM
+  2. Install nginx or Apache
+  3. Configure it to serve content
+  4. If they mention React/Vue/Angular, also set up the JavaScript framework
+
+- "host a React site with default init" = "create React app with npx create-react-app"
+
+Example workflow for React (using generic Ansible tools):
+1. **EXECUTE_TOOL:** create-lxd-container {{"name": "react-app", "image": "ubuntu:22.04", "host": "{self.current_server}"}}
+2. **EXECUTE_TOOL:** install-service-ansible {{"service": "react", "host": "react-app"}}
+
+Alternative (completely custom service):
+1. **EXECUTE_TOOL:** create-lxd-container {{"name": "custom-app", "image": "ubuntu:22.04", "host": "{self.current_server}"}}
+2. **EXECUTE_TOOL:** run-ansible-command {{"hosts": "custom-app", "module": "apt", "args": "name=python3 state=present", "become": true}}
+3. **EXECUTE_TOOL:** run-ansible-command {{"hosts": "custom-app", "module": "git", "args": "repo=https://github.com/user/app.git dest=/opt/app"}}
+
+For any service (Pi-hole, TrueNAS, Plex, etc.):
+- Use **install-service-ansible** with predefined templates (react, docker, nginx, pihole)
+- Or use **run-ansible-playbook** with custom playbook for any service
+- Or use **run-ansible-command** for ad-hoc commands
+
+🔐 NEW HOMELAB AUTHENTICATION SETUP:
+When user mentions a NEW server/Pi that needs to be added to homelab:
+
+**RECOMMENDED APPROACH: Use MCP-generated SSH keys (cleaner, more secure)**
+
+1. **Use setup-homelab-auth-mcp** for new servers:
+   - Automatically generates MCP SSH key if needed
+   - Creates ansible-admin user with sudo access
+   - Deploys MCP SSH key for passwordless access
+   - Stores authentication info in context
+   - Tests connectivity
+
+Example workflow for new Pi:
+User: "I have a new Raspberry Pi at 192.168.1.100"
+1. **EXECUTE_TOOL:** setup-homelab-auth-mcp {{"host": "192.168.1.100", "initial_auth": {{"method": "pi_default"}}}}
+
+**ALTERNATIVE: GitHub SSH keys approach**
+1. **EXECUTE_TOOL:** setup-homelab-auth {{"host": "192.168.1.100", "github_username": "USERNAME", "initial_auth": {{"method": "pi_default"}}}}
+
+Benefits of MCP SSH approach:
+- ✅ No GitHub account pollution with homelab keys
+- ✅ Single key for all homelab servers (easier management)
+- ✅ Keys never leave homelab environment
+- ✅ Automatic key generation and deployment
+- ✅ Context storage for future operations
+
+🌐 UNIVERSAL AUTHENTICATION SYSTEM:
+For ANY infrastructure provider (not just Pi/servers), use:
+
+**setup-universal-auth** - Works with ALL infrastructure types:
+- **Proxmox**: SSH keys or API tokens
+- **TrueNAS**: API keys or SSH access  
+- **Docker**: SSH to host or TLS certificates
+- **LXD**: SSH to host
+- **VMware**: Domain accounts or SSH to ESXi
+- **AWS**: IAM roles or access keys
+- **Azure**: Service principals
+- **GCP**: Service accounts
+- **Kubernetes**: Tokens or certificates
+
+Examples:
+- Proxmox API: **EXECUTE_TOOL:** setup-universal-auth {{"provider_type": "proxmox", "endpoint": "192.168.1.200", "api_token": "root@pam!token", "username": "root@pam"}}
+- TrueNAS: **EXECUTE_TOOL:** setup-universal-auth {{"provider_type": "truenas", "endpoint": "192.168.1.201", "api_key": "your-api-key"}}
+- Docker host: **EXECUTE_TOOL:** setup-universal-auth {{"provider_type": "docker", "endpoint": "192.168.1.202", "ssh_user": "ansible-admin"}}
+- AWS: **EXECUTE_TOOL:** setup-universal-auth {{"provider_type": "aws", "endpoint": "us-east-1", "role_arn": "arn:aws:iam::123:role/MyRole"}}
+
+Available auth tools:
+- **setup-universal-auth** - RECOMMENDED: Works with ANY infrastructure provider  
+- **setup-homelab-auth-mcp** - For generic servers/Pi with SSH
+- **list-auth-configurations** - View all stored authentication configs
+- **get-auth-configuration** - Get specific provider auth details
+- **generate-mcp-ssh-key** - Generate dedicated homelab SSH key
+- **get-mcp-ssh-key-info** - Check MCP key status
+- **test-mcp-ssh-access** - Test SSH connectivity with MCP key
+- **get-authentication-context** - View stored auth info for all servers
 
 BE SMART - INFER THE USER'S INTENT AND USE THE CURRENT SERVER!
 
@@ -943,7 +1077,9 @@ REMEMBER: You can actually execute commands via MCP tools - don't just give inst
                     logger.info(f"Added current server {self.current_server} to {tool_name}")
 
             # Execute the tool based on its type
-            if tool in AGENT_HOMELAB_TOOLS:
+            if tool in HOMELAB_CONTEXT_TOOLS:
+                result = await handle_homelab_context_tool(tool_name, arguments)
+            elif tool in AGENT_HOMELAB_TOOLS:
                 result = await handle_agent_homelab_tool(tool_name, arguments)
             elif tool in LXD_TOOLS:
                 result = await handle_lxd_tool(tool_name, arguments)
@@ -971,7 +1107,7 @@ REMEMBER: You can actually execute commands via MCP tools - don't just give inst
             import json
             
             # Look for **EXECUTE_TOOL:** pattern (handle hyphens in tool names)
-            tool_pattern = r'\*\*EXECUTE_TOOL:\*\*\s+([\w-]+)\s+(\{[^}]*\})'
+            tool_pattern = r'(?:\*\*EXECUTE_TOOL:\*\*|`EXECUTE_TOOL:`)\s+([\w-]+)\s+(\{(?:[^{}]|{[^{}]*})*\})'
             matches = re.findall(tool_pattern, text_chunk)
             
             if not matches:
@@ -1022,40 +1158,136 @@ REMEMBER: You can actually execute commands via MCP tools - don't just give inst
                 if cancel_event and not cancel_event.is_set():
                     yield response
             else:
-                # Streaming response with cancellation support
-                logger.debug("Starting streaming response...")
-                chunk_count = 0
-                try:
-                    async for chunk in response:
-                        # Check for cancellation
-                        if cancel_event and cancel_event.is_set():
-                            logger.debug(f"Streaming cancelled after {chunk_count} chunks")
-                            yield "\n\n⏹️ Response cancelled by user"
-                            break
-                            
-                        if chunk and chunk.strip():  # Only yield non-empty chunks
-                            chunk_count += 1
-                            # Check for tool execution requests in the chunk
-                            if "**EXECUTE_TOOL:**" in chunk:
-                                # Parse and execute the tool
-                                tool_result = await self.parse_and_execute_tool(chunk)
-                                if tool_result:
-                                    yield f"\n🔧 **Executing tool...** \n{tool_result}\n"
-                            else:
-                                yield chunk
-                    
-                    if not (cancel_event and cancel_event.is_set()):
-                        logger.debug(f"Streaming completed with {chunk_count} chunks")
-                        
-                except Exception as streaming_error:
-                    logger.error(f"Error during streaming: {streaming_error}", exc_info=True)
-                    yield f"\n\n❌ Streaming interrupted: {str(streaming_error)}"
+                # Use the synchronized streaming tool manager
+                logger.debug("Starting streaming response with tool execution...")
+                
+                def output_callback(text: str):
+                    """Callback for immediate UI updates (if needed)"""
+                    # For now, we'll handle output through the generator
+                    pass
+                
+                # Use the streaming tool manager for synchronized execution
+                async for chunk in stream_with_tool_execution(
+                    response,
+                    self.execute_mcp_tool,
+                    output_callback,
+                    cancel_event
+                ):
+                    yield chunk
                 
         except Exception as e:
             error_details = f"Failed to query Ollama: {str(e)}"
             logger.error(error_details, exc_info=True)
             yield f"❌ {error_details}\n\n💡 Check if Ollama is running: `ollama list`"
+
+    def _setup_readline(self):
+        """Set up readline for command history and editing."""
+        try:
+            # Check if running in debugger/VS Code which may block readline
+            import sys
+            if hasattr(sys, 'ps1') or 'debugpy' in sys.modules:
+                logger.info("Running in debugger - readline features may be limited")
+                return
             
+            # Set up history file
+            history_file = Path.home() / ".homelab_chat_history"
+            
+            # Load existing history
+            if history_file.exists():
+                readline.read_history_file(str(history_file))
+            
+            # Set history length
+            readline.set_history_length(1000)
+            
+            # Save history on exit
+            atexit.register(readline.write_history_file, str(history_file))
+            
+            # Set up tab completion
+            readline.parse_and_bind("tab: complete")
+            readline.set_completer(self._tab_completer)
+            
+            # Enable emacs-style editing (default)
+            readline.parse_and_bind("set editing-mode emacs")
+            
+            # Enable arrow key navigation
+            readline.parse_and_bind("\\e[A: previous-history")  # Up arrow
+            readline.parse_and_bind("\\e[B: next-history")     # Down arrow
+            readline.parse_and_bind("\\e[C: forward-char")     # Right arrow
+            readline.parse_and_bind("\\e[D: backward-char")    # Left arrow
+            
+            # Enable common editing shortcuts
+            readline.parse_and_bind("\\C-a: beginning-of-line")  # Ctrl+A
+            readline.parse_and_bind("\\C-e: end-of-line")        # Ctrl+E
+            readline.parse_and_bind("\\C-k: kill-line")          # Ctrl+K
+            readline.parse_and_bind("\\C-u: unix-line-discard")  # Ctrl+U
+            readline.parse_and_bind("\\C-w: unix-word-rubout")   # Ctrl+W
+            
+            logger.debug("Readline configured successfully")
+            
+        except Exception as e:
+            logger.warning(f"Could not set up readline: {e} (this is normal in VS Code debugger)")
+    
+    def _tab_completer(self, text: str, state: int) -> Optional[str]:
+        """Tab completion for common commands and servers."""
+        try:
+            # Common commands that can be completed
+            commands = [
+                'help', 'status', 'quit', 'exit', 'clear', 'debug', 'verbose',
+                'discover', 'limits', 'server', 'clear-server',
+                'use ', 'set server ',
+                # Add some common homelab-related phrases
+                'My homelab consists of',
+                'I have a pi called',
+                'Install docker on',
+                'Create a VM for',
+                'Show me what\'s running',
+                'List all containers',
+                'What services are installed'
+            ]
+            
+            # Add server names if we have any in history
+            if hasattr(self, 'current_server') and self.current_server:
+                commands.extend([
+                    f'use {self.current_server}',
+                    f'discover {self.current_server}',
+                ])
+            
+            # Filter commands that start with the current text
+            matches = [cmd for cmd in commands if cmd.lower().startswith(text.lower())]
+            
+            # Return the match at the requested state index
+            if state < len(matches):
+                return matches[state]
+            else:
+                return None
+                
+        except Exception as e:
+            logger.debug(f"Tab completion error: {e}")
+            return None
+    
+    def get_user_input(self, prompt: str) -> str:
+        """Get user input with readline support for history and editing."""
+        try:
+            # Use readline for input (supports history and editing)
+            user_input = input(prompt).strip()
+            
+            # Add non-empty input to history (readline handles this automatically)
+            # But we can also maintain our own conversation history
+            if user_input and user_input not in ['quit', 'exit', 'bye', 'help', 'status']:
+                # Don't add commands to conversation history, only actual messages
+                if not user_input.startswith(('use ', 'set ', 'clear', 'debug', 'discover')):
+                    # This will be added to conversation history later when we process the response
+                    pass
+            
+            return user_input
+            
+        except (EOFError, KeyboardInterrupt):
+            # Handle Ctrl+C and Ctrl+D gracefully
+            raise
+        except Exception as e:
+            logger.error(f"Error getting user input: {e}")
+            return ""
+
     async def show_thinking_animation(self, stop_event: asyncio.Event):
         """Show animated thinking indicator."""
         if not self.console:
@@ -1091,18 +1323,19 @@ REMEMBER: You can actually execute commands via MCP tools - don't just give inst
         
         while True:
             try:
-                # Get user input with server context
+                # Get user input with server context and readline support
                 try:
                     if self.current_server:
-                        prompt_text = f"\n[bold blue]You[/bold blue] [dim](server: {self.current_server})[/dim]"
+                        if self.console:
+                            # For Rich console, we still need to fall back to plain input for readline
+                            server_text = f" (server: {self.current_server})"
+                            user_input = self.get_user_input(f"\nYou{server_text}: ")
+                        else:
+                            server_text = f" (server: {self.current_server})"
+                            user_input = self.get_user_input(f"\nYou{server_text}: ")
                     else:
-                        prompt_text = "\n[bold blue]You[/bold blue]"
-                    
-                    if self.console:
-                        user_input = Prompt.ask(prompt_text)
-                    else:
-                        server_text = f" (server: {self.current_server})" if self.current_server else ""
-                        user_input = input(f"\nYou{server_text}: ").strip()
+                        user_input = self.get_user_input("\nYou: ")
+                        
                 except (EOFError, KeyboardInterrupt):
                     self.print("\n👋 Session ended. Happy homelabbing!", "green")
                     break
@@ -1298,6 +1531,26 @@ REMEMBER: You can actually execute commands via MCP tools - don't just give inst
 - **clear-server** - Clear current server context
 
 The current server is shown in your prompt and used as default for all operations!
+
+## ✨ Input Features (NEW!)
+
+**Command History:**
+- **↑/↓ arrows** - Browse command history (saved between sessions)
+- **Ctrl+R** - Reverse search through history
+
+**Line Editing:**
+- **←/→ arrows** - Move cursor left/right in current line
+- **Ctrl+A** - Jump to beginning of line
+- **Ctrl+E** - Jump to end of line
+- **Ctrl+U** - Clear entire line
+- **Ctrl+K** - Delete from cursor to end of line
+- **Ctrl+W** - Delete word before cursor
+
+**Tab Completion:**
+- **Tab** - Auto-complete commands and common phrases
+- **Tab Tab** - Show all possible completions
+
+History is saved in `~/.homelab_chat_history` and persists between sessions!
 
 ## Example Questions
 

@@ -137,42 +137,193 @@
 - AI provides: Intelligence to interpret SOPs, make decisions, and adapt to environment
 - Together: User gets intelligent infrastructure automation that follows best practices
 
-## Architecture Principles
-1. **Provider-Agnostic Design**
-   - All configurations (VM, network, storage) use provider-agnostic format
-   - "Driver" pattern converts agnostic configs to provider-specific implementations
-   - Current driver: Proxmox (future: AWS, GCP, Azure, VMware)
-   - AI agents work with abstract resources, not provider-specific details
+## 🏗️ CORE ARCHITECTURE PRINCIPLE: UNIVERSAL PROVIDER AGNOSTICISM
 
-### Provider Driver Architecture:
-```
-User Request → AI Agent → Agnostic Config → Provider Driver → Provider API
-                   ↓                              ↓
-              (decisions)                   (translation)
-                   ↓                              ↓
-              Inventory ←  Validation  ←  Implementation
-```
+**CRITICAL DESIGN REQUIREMENT**: This MCP server MUST work seamlessly across ALL infrastructure types:
 
-### Agnostic Configuration Example:
+### **Target Infrastructure Environments:**
+1. **🏠 Local Bare Metal**
+   - Physical servers, workstations, Raspberry Pis
+   - Direct hardware provisioning and management
+   - IPMI, BIOS configuration, hardware discovery
+
+2. **🖥️ Local Virtualization**
+   - Proxmox VE, VMware vSphere, Hyper-V
+   - LXD containers, Docker, Podman
+   - Local hypervisor management
+
+3. **☁️ Cloud Providers**
+   - AWS EC2, Azure VMs, GCP Compute Engine
+   - Cloud-native services (RDS, Lambda, etc.)
+   - Multi-cloud deployments
+
+4. **🔀 Hybrid Environments**
+   - Mixed local + cloud infrastructures
+   - Cross-provider workload distribution
+   - Unified management across environments
+
+### **Provider-Agnostic Design Patterns:**
+
+#### **1. Universal Resource Abstraction**
+All infrastructure operations use provider-neutral resource definitions:
+
 ```json
 {
   "resource_type": "compute",
-  "name": "jenkins-server",
-  "specs": {
-    "cpu": 4,
+  "name": "web-server",
+  "specifications": {
+    "cpu_cores": 4,
     "memory_gb": 8,
-    "storage_gb": 50,
-    "network": "default",
-    "os": "ubuntu-22.04"
+    "storage_gb": 100,
+    "network_tier": "standard",
+    "os_family": "ubuntu",
+    "os_version": "22.04"
+  },
+  "deployment_preferences": {
+    "availability": "high",
+    "performance": "balanced",
+    "cost_optimization": true
   }
 }
 ```
 
-### Provider Drivers Translate To:
-- **Proxmox**: `qm create`, specific template IDs, network bridges
-- **AWS**: EC2 instance types, AMIs, VPCs
-- **GCP**: Compute Engine, machine types, images
-- **Azure**: VM sizes, marketplace images, VNets
+#### **2. Provider Driver Architecture**
+```
+User Intent → AI Analysis → Abstract Config → Provider Driver → Native API
+     ↓             ↓              ↓               ↓            ↓
+"Need web server" → Resource requirements → Standard format → Proxmox/AWS/etc → Implementation
+```
+
+#### **3. Authentication Abstraction**
+Universal authentication handles all provider types:
+- **SSH Keys**: Bare metal, VMs, containers
+- **API Tokens**: Cloud services, appliances
+- **Cloud Roles**: AWS IAM, Azure SP, GCP SA
+- **Certificates**: Kubernetes, Docker TLS
+
+#### **4. Provider Translation Layer**
+Each provider has a translation driver:
+
+**Proxmox Driver**:
+```json
+{cpu: 4, memory_gb: 8} → {cores: 4, memory: 8192, template: 9000}
+```
+
+**AWS Driver**:
+```json
+{cpu: 4, memory_gb: 8} → {instance_type: "t3.large", ami: "ami-ubuntu-22.04"}
+```
+
+**GCP Driver**:
+```json
+{cpu: 4, memory_gb: 8} → {machine_type: "e2-standard-4", image: "ubuntu-2204-lts"}
+```
+
+### **Implementation Requirements:**
+
+#### **1. No Provider Lock-in**
+- ❌ Never hardcode provider-specific resource types
+- ❌ Never assume specific infrastructure capabilities
+- ✅ Always use abstract resource definitions
+- ✅ Support graceful provider migration
+
+#### **2. Capability Detection**
+```python
+class ProviderCapabilities:
+    supports_containers: bool
+    supports_gpu: bool
+    supports_networking: bool
+    max_cpu_cores: int
+    max_memory_gb: int
+    storage_types: List[str]
+```
+
+#### **3. Universal Service Deployment**
+Services must deploy anywhere:
+```bash
+# Same command works on ALL providers
+deploy_service {
+  "service": "docker",
+  "target": "optimal",  # AI picks best available infrastructure
+  "requirements": {"cpu": 2, "memory_gb": 4}
+}
+```
+
+#### **4. Provider-Agnostic Tools**
+All MCP tools must work universally:
+- `create-compute-resource` (not `create-proxmox-vm`)
+- `setup-universal-auth` (handles all auth types)
+- `deploy-service` (works on any infrastructure)
+- `discover-infrastructure` (finds any provider type)
+
+### **Benefits of This Architecture:**
+
+1. **🔄 Future-Proof**: Add new providers without changing core logic
+2. **🌍 Hybrid-Ready**: Mix local and cloud seamlessly  
+3. **💰 Cost-Flexible**: Move workloads based on cost/performance
+4. **🎯 AI-Optimal**: AI chooses best infrastructure automatically
+5. **🚀 Migration-Friendly**: Easy provider transitions
+6. **📈 Scalable**: Start local, expand to cloud naturally
+
+### **Current Provider Drivers Implemented:**
+- ✅ **Proxmox**: VM creation, management, discovery
+- ✅ **LXD**: Container management
+- ✅ **Docker**: Container deployment
+- ✅ **SSH/Bare Metal**: Direct server management
+- 🚧 **AWS**: (Architecture ready, implementation pending)
+- 🚧 **Azure**: (Architecture ready, implementation pending)
+- 🚧 **GCP**: (Architecture ready, implementation pending)
+
+### **Development Guidelines:**
+
+1. **Always Design Provider-Agnostic First**
+   - Start with abstract resource definitions
+   - Then implement provider-specific translations
+   
+2. **Test Multi-Provider Scenarios**
+   - Ensure tools work across different infrastructure
+   - Validate provider switching capabilities
+
+3. **Document Provider Limitations**
+   - Clearly note provider-specific constraints
+   - Provide fallback strategies
+
+4. **Extensible Driver System**
+   - Make adding new providers straightforward
+   - Maintain driver interface consistency
+
+**This architecture ensures the MCP server becomes a truly universal infrastructure automation platform, not just a Proxmox/homelab tool.**
+
+## 📚 Documentation & Knowledge Management
+
+**PRIORITY**: The project is accumulating extensive documentation that needs proper organization and management.
+
+### Current Documentation Challenges:
+- Multiple large markdown files in repository root
+- Scattered knowledge across various files  
+- Growing complexity of architecture documentation
+- Need for searchable, maintainable knowledge base
+
+### Planned Documentation System:
+1. **Phase 1**: Restructure repository docs into organized `docs/` directory
+2. **Phase 2**: Deploy self-hosted documentation service (BookStack/Outline)
+3. **Phase 3**: Integrate documentation tools into MCP for auto-documentation
+
+### Documentation Service Requirements:
+- **Self-hosted** within homelab infrastructure
+- **WYSIWYG editing** for non-technical users
+- **Search functionality** across all documentation
+- **API integration** for automated documentation updates
+- **Version control** and change tracking
+
+### MCP Documentation Tools (Future):
+- `create-documentation` - Create new documentation pages
+- `update-documentation` - Update existing knowledge base
+- `search-documentation` - Search procedures and guides  
+- `document-infrastructure` - Auto-document discovered resources
+- `get-procedure` - Retrieve SOPs and operational guides
+
+See `DOCUMENTATION_STRATEGY.md` for detailed implementation plan.
 
 2. **OS Configuration via Ansible**
    - Use Ansible for ALL OS-level configuration and application deployment

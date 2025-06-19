@@ -229,6 +229,28 @@ LXD_TOOLS = [
             "type": "object",
             "properties": {}
         }
+    ),
+    Tool(
+        name="exec-in-lxd-container",
+        description="Execute a command inside an LXD container",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "container_name": {
+                    "type": "string",
+                    "description": "Name of the container to execute command in"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "Command to execute (as a single string)"
+                },
+                "host": {
+                    "type": "string",
+                    "description": "LXD host (if not localhost)"
+                }
+            },
+            "required": ["container_name", "command"]
+        }
     )
 ]
 
@@ -303,6 +325,24 @@ async def handle_lxd_tool(name: str, arguments: Dict[str, Any]) -> List[TextCont
         elif name == "lxd-infrastructure-diagram":
             diagram = await discovery_tools.generate_infrastructure_diagram()
             return [TextContent(type="text", text=diagram)]
+            
+        elif name == "exec-in-lxd-container":
+            # Execute command in container
+            from ..utils.lxd_api import LXDAPIClient
+            
+            client = LXDAPIClient(
+                host=arguments.get("host", "localhost"),
+                verify_ssl=False
+            )
+            
+            # Parse command string into list
+            import shlex
+            command_list = shlex.split(arguments["command"])
+            
+            result = await client.exec_in_container(
+                name=arguments["container_name"],
+                command=command_list
+            )
             
         else:
             result = {"error": f"Unknown tool: {name}"}

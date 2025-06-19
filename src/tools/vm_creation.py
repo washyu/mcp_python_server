@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ..utils.proxmox_api import ProxmoxAPIClient
 from ..utils.credential_manager import get_credential_manager
+from ..utils.homelab_context import HomelabContextManager, HomelabDevice, DeviceCapabilities
 
 
 @dataclass
@@ -429,7 +430,50 @@ async def create_vm_tool(
     )
     
     try:
+        # Validate homelab context before VM creation
+        context_manager = HomelabContextManager()
+        
+        # Check if target node is valid for deployment
+        if node:
+            node_validation = await context_manager.validate_device_for_service(
+                node, 
+                {
+                    "cpu_cores": cores,
+                    "memory_gb": memory_gb,
+                    "storage_gb": disk_gb,
+                    "requires_gpu": False
+                }
+            )
+            
+            if not node_validation["valid"]:
+                return {
+                    "success": False,
+                    "message": f"Node validation failed: {node_validation['reason']}",
+                    "error": "homelab_context_validation_failed"
+                }
+        
         result = await creator.create_vm(request)
+        
+        # Update homelab context with new VM
+        vm_capabilities = DeviceCapabilities(
+            cpu_cores=cores,
+            memory_gb=memory_gb,
+            storage_gb=disk_gb,
+            network_interfaces=["eth0"]
+        )
+        
+        vm_device = HomelabDevice(
+            ip_address=result.ip_address or "pending",
+            hostname=result.name,
+            role="service_host",
+            device_type="vm",
+            exclude_from_homelab=False,
+            capabilities=vm_capabilities,
+            services=result.services or [],
+            notes=f"Created by MCP - VM ID {result.vm_id} on node {result.node}"
+        )
+        
+        await context_manager.add_device(vm_device)
         
         return {
             "success": True,
@@ -440,7 +484,7 @@ async def create_vm_tool(
             "ssh_access": f"{result.ssh_user}@{result.ip_address}",
             "status": result.status,
             "services": result.services,
-            "message": f"VM '{name}' created successfully with ID {result.vm_id}"
+            "message": f"VM '{name}' created successfully with ID {result.vm_id} and added to homelab topology"
         }
         
     except Exception as e:

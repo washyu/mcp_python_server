@@ -8,7 +8,7 @@ import sys
 import pytest
 import ollama
 from rich.console import Console
-from config import Config
+from src.utils.config import Config
 
 console = Console()
 

@@ -5,7 +5,7 @@ Simple integration test without subprocess complexity.
 
 import asyncio
 import pytest
-from config import Config
+from src.utils.config import Config
 import ollama
 
 

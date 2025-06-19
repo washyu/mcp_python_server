@@ -9,12 +9,13 @@ from typing import Dict, Any, List, Optional
 import websockets
 from websockets.server import WebSocketServerProtocol
 from dataclasses import dataclass
-from config import Config
+from src.utils.config import Config
 from src.tools.proxmox_discovery import PROXMOX_TOOLS, handle_proxmox_tool
 from src.tools.vm_creation import create_vm_tool
 from src.tools.agent_homelab_tools import AGENT_HOMELAB_TOOLS, handle_agent_homelab_tool
 from src.tools.lxd_tools import LXD_TOOLS, handle_lxd_tool
 from src.tools.homelab_tools import HOMELAB_TOOLS, handle_homelab_tool
+from src.tools.homelab_context_tools import HOMELAB_CONTEXT_TOOLS, handle_homelab_context_tool
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -55,7 +56,15 @@ class MCPWebSocketServer:
             }
         )
         
-        # Register Agent-driven homelab automation tools (PRIORITY 1)
+        # Register Homelab Context tools (PRIORITY 1 - Need context first!)
+        for tool in HOMELAB_CONTEXT_TOOLS:
+            self.tools[tool.name] = Tool(
+                name=tool.name,
+                description=tool.description,
+                input_schema=tool.inputSchema
+            )
+        
+        # Register Agent-driven homelab automation tools (PRIORITY 2)
         for tool in AGENT_HOMELAB_TOOLS:
             self.tools[tool.name] = Tool(
                 name=tool.name,
@@ -137,8 +146,9 @@ class MCPWebSocketServer:
             }
         )
         
-        total_tools = len(AGENT_HOMELAB_TOOLS) + len(LXD_TOOLS) + len(HOMELAB_TOOLS) + len(PROXMOX_TOOLS) + 2  # +2 for hello_world and create_vm
+        total_tools = len(HOMELAB_CONTEXT_TOOLS) + len(AGENT_HOMELAB_TOOLS) + len(LXD_TOOLS) + len(HOMELAB_TOOLS) + len(PROXMOX_TOOLS) + 2  # +2 for hello_world and create_vm
         logger.info(f"Registered {total_tools} WebSocket MCP tools:")
+        logger.info(f"  🏠 Homelab Context: {len(HOMELAB_CONTEXT_TOOLS)} tools (PRIORITY 1)")
         logger.info(f"  🤖 Agent Automation: {len(AGENT_HOMELAB_TOOLS)} tools")
         logger.info(f"  📦 LXD Containers: {len(LXD_TOOLS)} tools") 
         logger.info(f"  👥 User Guidance: {len(HOMELAB_TOOLS)} tools")
@@ -259,6 +269,15 @@ class MCPWebSocketServer:
                         }
                     ]
                 }
+        elif tool_name in [tool.name for tool in HOMELAB_CONTEXT_TOOLS]:
+            # Call homelab context management tool
+            try:
+                result_content = await handle_homelab_context_tool(tool_name, arguments)
+                return self._convert_content_to_websocket(result_content)
+            except Exception as e:
+                logger.error(f"Error calling homelab context tool {tool_name}: {e}")
+                return self._create_error_response(tool_name, e)
+                
         elif tool_name in [tool.name for tool in AGENT_HOMELAB_TOOLS]:
             # Call agent-driven homelab automation tool
             try:

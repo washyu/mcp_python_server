@@ -1,8 +1,21 @@
-# Ansible MCP Server
+# Universal Homelab MCP Server
 
-A Model Context Protocol (MCP) server for managing homelab infrastructure with Ansible.
+A Model Context Protocol (MCP) server that provides AI agents with intelligent homelab infrastructure management capabilities.
 
 **Platform Support**: Linux-first design optimized for homelab environments (Proxmox, Ubuntu, Debian). Windows users should use WSL2 for development.
+
+## 📚 Documentation
+
+Our documentation is organized into logical categories:
+
+- **[📖 User Guides](docs/user-guides/)** - Getting started and usage guides
+- **[⚙️ Setup & Installation](docs/setup/)** - Installation and testing procedures  
+- **[🏗️ Architecture](docs/architecture/)** - Technical design and implementation
+- **[✨ Features](docs/features/)** - Core functionality documentation
+- **[🤖 AI Context](docs/context/)** - AI context system and examples
+- **[📋 Project Management](docs/project/)** - Status, roadmap, and strategy
+
+**New to the project?** Start with the [Core Overview](docs/user-guides/README_MCP_CORE.md).
 
 ## Quick Start
 
@@ -49,16 +62,26 @@ cp .env.example .env
 
 ### Running the Server
 
+The MCP server supports multiple transport modes:
+
 ```bash
-# Run the MCP server with WebSocket transport (default)
+# Run with interactive chat interface (default)
 uv run python main.py
 
-# Or with specific port
-uv run python main.py --port 8765
+# Stdio transport (for Claude Desktop)
+uv run python main.py --mode stdio
 
-# For Claude Desktop compatibility (stdio transport)
-uv run python main.py --transport stdio
+# WebSocket transport
+uv run python main.py --mode websocket --port 8765
+
+# Streamable HTTP transport (NEW)
+uv run python main.py --mode http --host localhost --port 3000
+
+# Server-Sent Events (SSE) transport (NEW)
+uv run python main.py --mode sse --host localhost --port 3000
 ```
+
+See [HTTP_TRANSPORT.md](docs/HTTP_TRANSPORT.md) for details on the new HTTP transport options.
 
 ### Testing with Local AI Agent
 
@@ -138,11 +161,13 @@ mcp_python_server/
 └── utils/              # Utilities (future)
 ```
 
-The server supports both:
-- **WebSocket transport** (default) - Better for testing and web integrations
+The server supports multiple transports:
+- **WebSocket transport** - Real-time bidirectional communication
 - **stdio transport** - For Claude Desktop compatibility
+- **HTTP transport** - RESTful API with streaming support (NEW)
+- **SSE transport** - Server-Sent Events for real-time updates (NEW)
 
-Both transports implement the same MCP protocol (JSON-RPC 2.0).
+All transports implement the same MCP protocol (JSON-RPC 2.0).
 
 ## Development
 

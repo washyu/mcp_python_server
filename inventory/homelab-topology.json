@@ -1,0 +1,160 @@
+{
+  "topology": {
+    "version": "1.0",
+    "last_updated": "2025-06-17T13:43:49.583230",
+    "discovery_settings": {
+      "auto_discovery_enabled": true,
+      "staleness_hours": 10,
+      "network_scan_range": "192.168.10.0/24"
+    }
+  },
+  "devices": {
+    "192.168.10.102": {
+      "ip_address": "192.168.10.102",
+      "hostname": "dev-laptop",
+      "role": "development",
+      "device_type": "laptop",
+      "exclude_from_homelab": true,
+      "capabilities": {
+        "cpu_cores": 4,
+        "memory_gb": 8,
+        "storage_gb": 100,
+        "network_interfaces": [
+          "eth0"
+        ],
+        "gpu": null
+      },
+      "services": [],
+      "notes": "Development machine - excluded from homelab",
+      "discovered_at": "2025-06-17T11:36:03.213656",
+      "last_verified": "2025-06-17T11:36:03.213663",
+      "managed_vms": null
+    },
+    "192.168.10.200": {
+      "hostname": "proxmox",
+      "role": "infrastructure_host",
+      "device_type": "proxmox_host",
+      "exclude_from_homelab": false,
+      "capabilities": {
+        "cpu_cores": 16,
+        "memory_gb": 64,
+        "storage_gb": 2000,
+        "network_interfaces": [
+          "vmbr0",
+          "vmbr1"
+        ],
+        "gpu": {
+          "type": "AMD",
+          "model": "MI50",
+          "passthrough_capable": true
+        }
+      },
+      "services": [
+        "proxmox-ve",
+        "qemu-guest-agent"
+      ],
+      "managed_vms": [],
+      "notes": "Primary virtualization host",
+      "discovered_at": null,
+      "last_verified": null
+    },
+    "192.168.10.50": {
+      "ip_address": "192.168.10.50",
+      "hostname": "testpi",
+      "role": "service_host",
+      "device_type": "raspberry_pi",
+      "exclude_from_homelab": false,
+      "capabilities": {
+        "cpu_cores": 4,
+        "memory_gb": 8,
+        "storage_gb": 0,
+        "network_interfaces": [],
+        "gpu": null
+      },
+      "services": [],
+      "notes": "Test Pi device",
+      "discovered_at": "2025-06-17T13:43:49.499542",
+      "last_verified": "2025-06-17T13:43:49.499549",
+      "managed_vms": null
+    },
+    "192.168.10.51": {
+      "ip_address": "192.168.10.51",
+      "hostname": "newpi",
+      "role": "service_host",
+      "device_type": "raspberry_pi",
+      "exclude_from_homelab": false,
+      "capabilities": {
+        "cpu_cores": 0,
+        "memory_gb": 0,
+        "storage_gb": 0,
+        "network_interfaces": [],
+        "gpu": null
+      },
+      "services": [],
+      "notes": "",
+      "discovered_at": "2025-06-17T13:43:49.583222",
+      "last_verified": "2025-06-17T13:43:49.583228",
+      "managed_vms": null
+    }
+  },
+  "networks": {
+    "192.168.10.0/24": {
+      "name": "main_lan",
+      "role": "primary",
+      "gateway": "192.168.10.1",
+      "dns_servers": [
+        "192.168.10.1"
+      ],
+      "vlan_id": null,
+      "managed_by": "router"
+    }
+  },
+  "services": {
+    "proxmox-ve": {
+      "name": "Proxmox VE",
+      "category": "infrastructure",
+      "port": 8006,
+      "protocol": "https",
+      "hosted_on": "192.168.10.200",
+      "status": "unknown",
+      "dependencies": [],
+      "managed_by": "proxmox"
+    }
+  },
+  "device_roles": {
+    "development": {
+      "description": "Development machines - excluded from homelab deployment",
+      "allow_service_deployment": false,
+      "monitoring_level": "basic"
+    },
+    "infrastructure_host": {
+      "description": "Core infrastructure servers (Proxmox, Docker hosts)",
+      "allow_service_deployment": false,
+      "monitoring_level": "detailed"
+    },
+    "service_host": {
+      "description": "Dedicated service hosts (Pi devices, VMs)",
+      "allow_service_deployment": true,
+      "monitoring_level": "detailed"
+    },
+    "network_device": {
+      "description": "Routers, switches, access points",
+      "allow_service_deployment": false,
+      "monitoring_level": "basic"
+    },
+    "storage_device": {
+      "description": "NAS, SAN, backup devices",
+      "allow_service_deployment": false,
+      "monitoring_level": "detailed"
+    }
+  },
+  "deployment_preferences": {
+    "default_vm_host": "192.168.10.200",
+    "preferred_service_hosts": [],
+    "resource_allocation": {
+      "cpu_overcommit_ratio": 2.0,
+      "memory_overcommit_ratio": 1.5,
+      "storage_threshold_percent": 85
+    }
+  }
+}

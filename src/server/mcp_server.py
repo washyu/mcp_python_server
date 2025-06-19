@@ -28,6 +28,9 @@ from src.tools.vm_creation import (
 from src.tools.homelab_tools import HOMELAB_TOOLS, handle_homelab_tool
 from src.tools.lxd_tools import LXD_TOOLS, handle_lxd_tool
 from src.tools.agent_homelab_tools import AGENT_HOMELAB_TOOLS, handle_agent_homelab_tool
+from src.tools.homelab_context_tools import HOMELAB_CONTEXT_TOOLS, handle_homelab_context_tool
+from src.tools.ansible_tools import ANSIBLE_TOOLS, handle_ansible_tool
+from src.tools.auth_setup_tools import AUTH_SETUP_TOOLS, handle_auth_setup_tool
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +49,28 @@ class HomelabMCPServer:
     - Educational explanations of all decisions made
     """
     
-    def __init__(self, name: str = "universal-homelab-mcp"):
+    def __init__(self, name: str = "universal-homelab-mcp", host: str = "127.0.0.1", port: int = 8000):
         """Initialize the MCP server."""
         self.name = name
-        self.mcp = FastMCP(name)
+        self.mcp = FastMCP(name, host=host, port=port)
         self._register_tools()
     
     def _register_tools(self):
         """Register all MCP tools for AI-driven homelab automation."""
         logger.info("Registering Universal Homelab MCP tools...")
+        
+        # PRIORITY 0: Authentication setup tools (foundational)
+        for tool in AUTH_SETUP_TOOLS:
+            logger.info(f"Registering Auth tool: {tool.name}")
+            
+            def make_auth_handler(tool_name: str):
+                async def handler(**kwargs) -> List[TextContent]:
+                    return await handle_auth_setup_tool(tool_name, kwargs)
+                return handler
+            
+            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+                make_auth_handler(tool.name)
+            )
         
         # PRIORITY 1: Agent-driven automation tools (main feature)
         for tool in AGENT_HOMELAB_TOOLS:
@@ -69,7 +85,20 @@ class HomelabMCPServer:
                 make_agent_handler(tool.name)
             )
         
-        # PRIORITY 2: Infrastructure discovery and management tools
+        # PRIORITY 2: Homelab Context and Topology Management
+        for tool in HOMELAB_CONTEXT_TOOLS:
+            logger.info(f"Registering Context tool: {tool.name}")
+            
+            def make_context_handler(tool_name: str):
+                async def handler(**kwargs) -> List[TextContent]:
+                    return await handle_homelab_context_tool(tool_name, kwargs)
+                return handler
+            
+            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+                make_context_handler(tool.name)
+            )
+        
+        # PRIORITY 3: Infrastructure discovery and management tools
         for tool in PROXMOX_TOOLS:
             logger.info(f"Registering Infrastructure tool: {tool.name}")
             
@@ -82,7 +111,7 @@ class HomelabMCPServer:
                 make_proxmox_handler(tool.name)
             )
         
-        # PRIORITY 3: Container platform tools  
+        # PRIORITY 4: Container platform tools  
         for tool in LXD_TOOLS:
             logger.info(f"Registering Container tool: {tool.name}")
             
@@ -95,7 +124,20 @@ class HomelabMCPServer:
                 make_lxd_handler(tool.name)
             )
         
-        # PRIORITY 4: User guidance tools (when agent needs human input)
+        # PRIORITY 5: Ansible automation tools (generic service deployment)
+        for tool in ANSIBLE_TOOLS:
+            logger.info(f"Registering Ansible tool: {tool.name}")
+            
+            def make_ansible_handler(tool_name: str):
+                async def handler(**kwargs) -> List[TextContent]:
+                    return await handle_ansible_tool(tool_name, kwargs)
+                return handler
+            
+            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+                make_ansible_handler(tool.name)
+            )
+        
+        # PRIORITY 6: User guidance tools (when agent needs human input)
         for tool in HOMELAB_TOOLS:
             logger.info(f"Registering Guidance tool: {tool.name}")
             
@@ -135,9 +177,10 @@ class HomelabMCPServer:
             description="Get current status and details of a VM"
         )(self._get_vm_status_handler)
         
-        total_tools = len(AGENT_HOMELAB_TOOLS) + len(PROXMOX_TOOLS) + len(LXD_TOOLS) + len(HOMELAB_TOOLS) + 5
+        total_tools = len(AGENT_HOMELAB_TOOLS) + len(HOMELAB_CONTEXT_TOOLS) + len(PROXMOX_TOOLS) + len(LXD_TOOLS) + len(HOMELAB_TOOLS) + 5
         logger.info(f"Successfully registered {total_tools} MCP tools for AI-driven homelab automation")
         logger.info(f"  🤖 Agent Automation: {len(AGENT_HOMELAB_TOOLS)} tools (PRIMARY FEATURE)")
+        logger.info(f"  🏠 Homelab Context: {len(HOMELAB_CONTEXT_TOOLS)} tools")
         logger.info(f"  🏗️  Infrastructure: {len(PROXMOX_TOOLS)} tools") 
         logger.info(f"  📦 Containers: {len(LXD_TOOLS)} tools")
         logger.info(f"  👥 User Guidance: {len(HOMELAB_TOOLS)} tools")
@@ -252,12 +295,17 @@ class HomelabMCPServer:
     async def run_stdio(self):
         """Run the MCP server with stdio transport."""
         logger.info(f"Starting {self.name} with stdio transport...")
-        await self.mcp.run_stdio()
+        await self.mcp.run_stdio_async()
     
-    async def run_sse(self, host: str = "localhost", port: int = 3000):
+    async def run_sse(self, mount_path: str | None = None):
         """Run the MCP server with SSE transport."""
-        logger.info(f"Starting {self.name} with SSE transport on {host}:{port}...")
-        await self.mcp.run_sse(host=host, port=port)
+        logger.info(f"Starting {self.name} with SSE transport on {self.mcp.settings.host}:{self.mcp.settings.port}...")
+        await self.mcp.run_sse_async(mount_path=mount_path)
+    
+    async def run_streamable_http(self):
+        """Run the MCP server with streamable HTTP transport."""
+        logger.info(f"Starting {self.name} with streamable HTTP transport on {self.mcp.settings.host}:{self.mcp.settings.port}...")
+        await self.mcp.run_streamable_http_async()
 
 
 async def main():

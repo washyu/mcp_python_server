@@ -16,7 +16,7 @@ import ollama
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
-from config import Config
+from src.utils.config import Config
 from src.client.websocket_client import MCPWebSocketClient
 from src.utils.setup_wizard import WizardFlow, PROXMOX_WIZARD_FLOW
 from src.utils.profile_manager import ProfileManager

@@ -13,7 +13,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from src.utils.credential_manager import get_credential_manager
 from src.utils.secure_config import get_secure_config, get_proxmox_client_config
 from src.utils.proxmox_api import ProxmoxAPIClient
-from config import Config
+from src.utils.config import Config
 from rich.console import Console
 from rich.table import Table
 

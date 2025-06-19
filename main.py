@@ -28,15 +28,21 @@ def main():
     parser = argparse.ArgumentParser(description="Universal Homelab MCP Server")
     parser.add_argument(
         "--mode",
-        choices=["chat", "stdio", "websocket"],
+        choices=["chat", "stdio", "websocket", "http", "sse"],
         default="chat",
-        help="Mode to run in: chat (full interface), stdio (MCP only), websocket (server only)"
+        help="Mode to run in: chat (full interface), stdio (MCP only), websocket (server only), http (streamable HTTP), sse (Server-Sent Events)"
     )
     parser.add_argument(
         "--port",
         type=int,
         default=8765,
-        help="Port for WebSocket server (default: 8765)"
+        help="Port for WebSocket/HTTP server (default: 8765)"
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="localhost",
+        help="Host to bind to (default: localhost)"
     )
     
     args = parser.parse_args()
@@ -49,10 +55,22 @@ def main():
     elif args.mode == "stdio":
         # Use stdio transport (for Claude Desktop compatibility)
         asyncio.run(mcp_main())
-    else:
+    elif args.mode == "websocket":
         # Use WebSocket transport only
-        print(f"Starting MCP WebSocket server on port {args.port}...", file=sys.stderr)
+        print(f"Starting MCP WebSocket server on {args.host}:{args.port}...", file=sys.stderr)
         asyncio.run(websocket_main())
+    elif args.mode == "http":
+        # Use streamable HTTP transport
+        print(f"Starting MCP streamable HTTP server on {args.host}:{args.port}...", file=sys.stderr)
+        from src.server.mcp_server import HomelabMCPServer
+        server = HomelabMCPServer(host=args.host, port=args.port)
+        asyncio.run(server.run_streamable_http())
+    elif args.mode == "sse":
+        # Use SSE (Server-Sent Events) transport
+        print(f"Starting MCP SSE server on {args.host}:{args.port}...", file=sys.stderr)
+        from src.server.mcp_server import HomelabMCPServer
+        server = HomelabMCPServer(host=args.host, port=args.port)
+        asyncio.run(server.run_sse())
 
 
 if __name__ == "__main__":
