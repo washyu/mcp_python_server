@@ -1909,5 +1909,34 @@ async def main():
     return 0
 
 
+async def docker_main():
+    """Entry point for Docker deployment - starts both MCP and chat servers."""
+    import logging
+    from src.server.mcp_server import HomelabMCPServer
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    logger = logging.getLogger(__name__)
+    logger.info("🚀 Starting Universal Homelab MCP Server with Chat Interface")
+    
+    # Create server instance for Docker (bind to all interfaces)
+    server = HomelabMCPServer(
+        name="universal-homelab-mcp",
+        host="0.0.0.0",  # Bind to all interfaces for Docker
+        port=3000
+    )
+    
+    # Run both servers concurrently
+    await server.run_both_servers()
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    # Check if running in Docker (for web interface)
+    if os.getenv("DOCKER_MODE") == "true":
+        sys.exit(asyncio.run(docker_main()))
+    else:
+        # Terminal chat interface
+        sys.exit(asyncio.run(main()))

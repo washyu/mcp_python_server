@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mcp-server:
     build:
@@ -8,6 +6,7 @@ services:
     container_name: universal-homelab-mcp
     ports:
       - "3000:3000"
+      - "3001:3001"
     environment:
       - DEBUG=true
       - OLLAMA_HOST=http://host.docker.internal:11434
@@ -18,7 +17,7 @@ services:
       - mcp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3

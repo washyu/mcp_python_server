@@ -1,5 +1,5 @@
 export class MCPClient {
-  private baseUrl: string = 'http://localhost:3000';
+  private baseUrl: string = '';  // Use relative URL through nginx proxy
   private sessionId: string | null = null;
   private currentServer: string | null = null;
   private tools: any[] = [];
@@ -9,11 +9,14 @@ export class MCPClient {
     try {
       console.log(`Connecting to MCP server via HTTP: ${server}`);
       
-      // Generate a unique session ID
-      this.sessionId = crypto.randomUUID();
+      // Start without session ID - server will provide one
+      this.sessionId = null;
       this.currentServer = server;
       
-      // Test connection and fetch tools
+      // Initialize the session first
+      await this.initialize();
+      
+      // Then fetch tools
       await this.fetchTools();
       
       this.connected = true;
@@ -21,6 +24,90 @@ export class MCPClient {
     } catch (error) {
       console.error('HTTP connection error:', error);
       throw new Error(`Failed to connect to ${server}: ${error}`);
+    }
+  }
+  
+  private async initialize(): Promise<void> {
+    // Call initialize without session ID to get one from server
+    const response = await this.makeRequestWithoutSessionCheck('initialize', {
+      protocolVersion: '2025-03-26',
+      capabilities: {
+        experimental: {},
+        tools: { listChanged: false }
+      },
+      clientInfo: {
+        name: 'ollama-web-client',
+        version: '1.0.0'
+      }
+    });
+    
+    if (response.result) {
+      console.log('MCP session initialized:', response.result.serverInfo);
+    }
+  }
+  
+  private async makeRequestWithoutSessionCheck(method: string, params: any): Promise<any> {
+    const requestBody = {
+      jsonrpc: '2.0',
+      method: method,
+      params: params,
+      id: Date.now()
+    };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream'
+    };
+
+    const response = await fetch(`${this.baseUrl}/mcp/v1/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    // Check for session ID in response headers
+    const sessionId = response.headers.get('mcp-session-id') || response.headers.get('x-session-id');
+    if (sessionId) {
+      this.sessionId = sessionId;
+      console.log('Received session ID from server:', sessionId);
+    }
+
+    // Handle Server-Sent Events response format
+    const text = await response.text();
+    
+    // Try to parse as SSE
+    if (text.startsWith('event:')) {
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.substring(6);
+          try {
+            const result = JSON.parse(jsonStr);
+            if (result.error) {
+              throw new Error(`MCP Error: ${result.error.message}`);
+            }
+            return result;
+          } catch (e) {
+            // Continue to next line
+          }
+        }
+      }
+    }
+    
+    // Try to parse as regular JSON
+    try {
+      const result = JSON.parse(text);
+      if (result.error) {
+        throw new Error(`MCP Error: ${result.error.message}`);
+      }
+      return result;
+    } catch (e) {
+      throw new Error(`Failed to parse response: ${text}`);
     }
   }
 
@@ -52,10 +139,6 @@ export class MCPClient {
   }
 
   private async makeRequest(method: string, params: any): Promise<any> {
-    if (!this.sessionId) {
-      throw new Error('No session ID - not connected');
-    }
-
     const requestBody = {
       jsonrpc: '2.0',
       method: method,
@@ -63,13 +146,19 @@ export class MCPClient {
       id: Date.now()
     };
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream'
+    };
+
+    // Always send session ID using correct MCP header name
+    if (this.sessionId) {
+      headers['X-Session-ID'] = this.sessionId;
+    }
+
     const response = await fetch(`${this.baseUrl}/mcp/v1/messages`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-        'X-Session-ID': this.sessionId
-      },
+      headers,
       body: JSON.stringify(requestBody)
     });
 
@@ -78,13 +167,38 @@ export class MCPClient {
       throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
-    const result = await response.json();
+    // Handle Server-Sent Events response format
+    const text = await response.text();
     
-    if (result.error) {
-      throw new Error(`MCP Error: ${result.error.message}`);
+    // Try to parse as SSE
+    if (text.startsWith('event:')) {
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.substring(6);
+          try {
+            const result = JSON.parse(jsonStr);
+            if (result.error) {
+              throw new Error(`MCP Error: ${result.error.message}`);
+            }
+            return result;
+          } catch (e) {
+            // Continue to next line
+          }
+        }
+      }
     }
-
-    return result;
+    
+    // Try to parse as regular JSON
+    try {
+      const result = JSON.parse(text);
+      if (result.error) {
+        throw new Error(`MCP Error: ${result.error.message}`);
+      }
+      return result;
+    } catch (e) {
+      throw new Error(`Failed to parse response: ${text}`);
+    }
   }
 
   getTools() {
@@ -115,13 +229,19 @@ export class MCPClient {
       id: Date.now()
     };
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream'
+    };
+
+    // Always send session ID using correct MCP header name
+    if (this.sessionId) {
+      headers['X-Session-ID'] = this.sessionId;
+    }
+
     const response = await fetch(`${this.baseUrl}/mcp/v1/messages`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-        'X-Session-ID': this.sessionId!
-      },
+      headers,
       body: JSON.stringify(requestBody)
     });
 

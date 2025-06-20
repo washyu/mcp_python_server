@@ -4,6 +4,7 @@ import { MCPClient } from './mcp/client';
 import { ChatMessage } from './ui/ChatMessage';
 import { ChatInput } from './ui/ChatInput';
 import { Storage } from './utils/storage';
+import { marked } from 'marked';
 
 export class ChatApp {
   private messages: Message[] = [];
@@ -36,13 +37,15 @@ export class ChatApp {
     {
       name: 'Ollama',
       apiKeyRequired: false,
-      models: ['llama3.2', 'mistral', 'phi', 'neural-chat', 'qwen2.5-coder']
+      models: ['llama3.1:8b', 'deepseek-r1:8b']
     }
   ];
 
   constructor() {
     this.initializeUI();
     this.loadSettings();
+    this.initializeProviders();
+    this.autoConnectMCP();
     ChatMessage.setupMarkdown();
   }
 
@@ -89,6 +92,7 @@ export class ChatApp {
   }
 
   private populateProviders() {
+    this.providerSelect.innerHTML = '';
     this.providers.forEach(provider => {
       const option = document.createElement('option');
       option.value = provider.name;
@@ -97,19 +101,57 @@ export class ChatApp {
     });
   }
 
+  private initializeProviders() {
+    // Set default provider to Ollama
+    this.providerSelect.value = 'Ollama';
+    
+    // Load models for default provider
+    const defaultProvider = this.providers.find(p => p.name === 'Ollama');
+    if (defaultProvider) {
+      this.updateModelOptions(defaultProvider.models);
+    }
+  }
+
   private populateServers() {
     const servers: Server[] = [
-      { hostname: 'localhost', description: 'Local server' },
-      { hostname: 'proxmox.local', description: 'Proxmox VE' },
-      { hostname: 'lxd.local', description: 'LXD Host' }
+      { hostname: 'none', description: 'No MCP server' },
+      { hostname: 'localhost:3000', description: 'Universal Homelab MCP Server' }
     ];
 
     servers.forEach(server => {
       const option = document.createElement('option');
       option.value = server.hostname || '';
-      option.textContent = `${server.hostname} - ${server.description}`;
+      option.textContent = server.hostname === 'none' ? 'No MCP server' : `${server.hostname} - ${server.description}`;
       this.serverSelect.appendChild(option);
     });
+
+    // Set default to localhost:3000
+    this.serverSelect.value = 'localhost:3000';
+  }
+
+  private async autoConnectMCP() {
+    // Auto-connect to the MCP server after UI is initialized
+    setTimeout(async () => {
+      try {
+        await this.mcpClient.connect('localhost:3000');
+        this.addSystemMessage('🚀 Connected to Universal Homelab MCP Server with 52+ infrastructure automation tools');
+      } catch (error) {
+        console.warn('Failed to auto-connect to MCP server:', error);
+        this.addSystemMessage('⚠️ Failed to connect to MCP server. Please check if the server is running.');
+      }
+    }, 1000); // Wait 1 second for UI to be ready
+  }
+
+  private convertMCPToolsToClaudeFormat(mcpTools: any[]): any[] {
+    return mcpTools.map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.inputSchema || {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }));
   }
 
   private handleProviderChange() {
@@ -198,10 +240,14 @@ export class ChatApp {
     this.messages.push(assistantMessage);
     const messageElement = this.renderMessage(assistantMessage);
 
-    // Build system message
+    // Let MCP tools be self-describing - minimal system message
     const systemMessage = this.mcpClient.isConnected() && this.mcpClient.getTools().length > 0
-      ? `You have access to MCP tools for LXD container and Proxmox VM management on server "${this.mcpClient.getCurrentServer()}". Available tools: ${this.mcpClient.getTools().map(t => t.name).join(', ')}. When the user asks for infrastructure tasks, use the appropriate tools. The current server context is ${this.mcpClient.getCurrentServer()}.`
+      ? `You have access to homelab infrastructure automation tools. When users ask about infrastructure tasks, check your available tools and use them as appropriate.`
       : '';
+    
+    const claudeTools = this.mcpClient.isConnected() 
+      ? this.convertMCPToolsToClaudeFormat(this.mcpClient.getTools())
+      : [];
 
     try {
       await this.claudeAPI.streamChat(
@@ -215,7 +261,8 @@ export class ChatApp {
         (thinking) => {
           assistantMessage.thinking += thinking;
           this.updateMessage(messageElement, assistantMessage);
-        }
+        },
+        claudeTools
       );
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -229,8 +276,96 @@ export class ChatApp {
   }
 
   private async sendOllamaMessage(_userMessage: string) {
-    // Ollama implementation would go here
-    this.addSystemMessage('Ollama integration not yet implemented');
+    // Create assistant message
+    const assistantMessage: Message = {
+      role: 'assistant',
+      content: '',
+      timestamp: new Date()
+    };
+    this.messages.push(assistantMessage);
+    const messageElement = this.renderMessage(assistantMessage);
+
+    try {
+      // Let MCP tools be self-describing for Ollama too
+      const systemMessage = this.mcpClient.isConnected() && this.mcpClient.getTools().length > 0
+        ? `You have access to homelab infrastructure automation tools. When users ask about infrastructure tasks, check your available tools and use them as appropriate.`
+        : '';
+
+      // Prepare messages for Ollama API
+      const ollamaMessages = this.messages.slice(0, -1).map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      // Add system message if we have MCP tools
+      if (systemMessage) {
+        ollamaMessages.unshift({
+          role: 'system',
+          content: systemMessage
+        });
+      }
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.modelSelect.value,
+          messages: ollamaMessages,
+          stream: true
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`MCP Chat API error: ${response.status} ${response.statusText}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Decode chunk and add to buffer
+          buffer += decoder.decode(value, { stream: true });
+          
+          // Split by newlines and process complete lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                if (data.type === 'text' && data.content) {
+                  assistantMessage.content += data.content;
+                  this.updateMessage(messageElement, assistantMessage);
+                } else if (data.type === 'suggestion' && data.content) {
+                  assistantMessage.content += data.content;
+                  this.updateMessage(messageElement, assistantMessage);
+                } else if (data.type === 'done') {
+                  break;
+                } else if (data.type === 'error') {
+                  assistantMessage.content += `\n\nError: ${data.content}`;
+                  this.updateMessage(messageElement, assistantMessage);
+                }
+              } catch (e) {
+                // Skip invalid JSON lines
+                console.warn('Failed to parse JSON line:', line);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      assistantMessage.content = `Error connecting to MCP Chat: ${error}`;
+      this.updateMessage(messageElement, assistantMessage);
+    }
   }
 
   private renderMessage(message: Message): HTMLElement {
@@ -244,13 +379,39 @@ export class ChatApp {
   }
 
   private updateMessage(element: HTMLElement, message: Message) {
-    const updatedHtml = ChatMessage.render(message);
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = updatedHtml;
-    const newElement = tempDiv.firstElementChild as HTMLElement;
-    element.replaceWith(newElement);
+    // Find the content element within the message element
+    const contentElement = element.querySelector('.message-content');
+    if (contentElement && message.role === 'assistant') {
+      // For streaming updates, process markdown to maintain formatting
+      // Use marked.parse() synchronously if available, otherwise use marked() and handle the promise
+      try {
+        const markdownContent = (marked as any).parse ? (marked as any).parse(message.content) : marked(message.content);
+        if (typeof markdownContent === 'string') {
+          contentElement.innerHTML = markdownContent;
+        } else {
+          // Handle promise case
+          markdownContent.then((content: string) => {
+            contentElement.innerHTML = content;
+          });
+        }
+      } catch (e) {
+        // Fallback to text content if markdown fails
+        contentElement.textContent = message.content;
+      }
+    } else if (contentElement) {
+      // For user messages, use textContent to prevent XSS
+      contentElement.textContent = message.content;
+    } else {
+      // Fallback to full replacement if content element not found
+      const updatedHtml = ChatMessage.render(message);
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = updatedHtml;
+      const newElement = tempDiv.firstElementChild as HTMLElement;
+      element.replaceWith(newElement);
+    }
     this.scrollToBottom();
   }
+
 
   private addSystemMessage(content: string) {
     const messageHtml = `

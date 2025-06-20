@@ -13,7 +13,8 @@ export class ClaudeAPI {
     model: string,
     systemMessage: string,
     onChunk: (chunk: string) => void,
-    onThinking?: (thinking: string) => void
+    onThinking?: (thinking: string) => void,
+    tools?: any[]
   ) {
     this.controller = new AbortController();
 
@@ -22,13 +23,18 @@ export class ClaudeAPI {
       .filter(m => m.role !== 'system')
       .filter(m => m.content && m.content.trim() !== '');
 
-    const requestBody = {
+    const requestBody: any = {
       model,
       max_tokens: 4096,
       messages: filteredMessages,
       system: systemMessage,
       stream: true
     };
+
+    // Add tools if provided
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools;
+    }
 
     const apiEndpoint = 'http://localhost:3001/api/claude';
     console.log('Making request to Claude API proxy:', apiEndpoint);

@@ -29,6 +29,7 @@ class AnsibleRunner:
         Run an Ansible playbook from a dictionary definition.
         
         Args:
+        
             playbook: Playbook definition as a dictionary
             inventory: Inventory as a dictionary
             extra_vars: Extra variables to pass to playbook

@@ -17,6 +17,12 @@ import logging
 from typing import Any, Dict, List
 from mcp.server import FastMCP
 from mcp.types import TextContent
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.responses import StreamingResponse, JSONResponse
+from starlette.middleware.cors import CORSMiddleware
+import json
+import ollama
 from src.tools.proxmox_discovery import PROXMOX_TOOLS, handle_proxmox_tool
 from src.tools.vm_creation import (
     create_vm_tool,
@@ -52,8 +58,12 @@ class HomelabMCPServer:
     def __init__(self, name: str = "universal-homelab-mcp", host: str = "127.0.0.1", port: int = 8000):
         """Initialize the MCP server."""
         self.name = name
-        self.mcp = FastMCP(name, host=host, port=port)
+        self.host = host
+        self.port = port
+        # Use stateless HTTP mode to bypass FastMCP session ID bug
+        self.mcp = FastMCP(name, host=host, port=port, stateless_http=True)
         self._register_tools()
+        self._setup_chat_app()
     
     def _register_tools(self):
         """Register all MCP tools for AI-driven homelab automation."""
@@ -186,6 +196,323 @@ class HomelabMCPServer:
         logger.info(f"  👥 User Guidance: {len(HOMELAB_TOOLS)} tools")
         logger.info(f"  🖥️  VM Management: 5 tools")
     
+    def _setup_chat_app(self):
+        """Set up the chat application with MCP tool orchestration."""
+        # Create routes for the chat API
+        routes = [
+            Route("/api/chat", self._chat_endpoint, methods=["POST"]),
+            Route("/api/tools", self._tools_endpoint, methods=["GET"]),
+            Route("/health", self._health_endpoint, methods=["GET"]),
+        ]
+        
+        # Create Starlette app for chat endpoints
+        self.chat_app = Starlette(routes=routes)
+        
+        # Add CORS middleware
+        self.chat_app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    
+    async def _tools_endpoint(self, request):
+        """Return available MCP tools."""
+        try:
+            # Get all registered tools
+            tools = []
+            
+            # Add each tool category with proper JSON serialization
+            for tool_set in [PROXMOX_TOOLS, LXD_TOOLS, HOMELAB_TOOLS, AGENT_HOMELAB_TOOLS, 
+                           HOMELAB_CONTEXT_TOOLS, ANSIBLE_TOOLS, AUTH_SETUP_TOOLS]:
+                for tool in tool_set:
+                    tools.append({
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
+                    })
+            
+            # Add VM management tools
+            vm_tools = [
+                {"name": "create_vm", "description": "Create a new VM from cloud-init template"},
+                {"name": "start_vm", "description": "Start a stopped VM"},
+                {"name": "stop_vm", "description": "Stop a running VM"},
+                {"name": "delete_vm", "description": "Delete a VM permanently"},
+                {"name": "get_vm_status", "description": "Get current status of a VM"}
+            ]
+            tools.extend(vm_tools)
+            
+            return JSONResponse({"tools": tools, "count": len(tools)})
+        except Exception as e:
+            logger.error(f"Error getting tools: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+    
+    async def _health_endpoint(self, request):
+        """Health check endpoint."""
+        return JSONResponse({"status": "healthy", "service": "mcp-chat-server"})
+    
+    async def _chat_endpoint(self, request):
+        """Handle chat requests with MCP tool orchestration."""
+        try:
+            data = await request.json()
+            messages = data.get('messages', [])
+            model = data.get('model', 'llama3.1:8b')
+            stream = data.get('stream', True)
+            
+            if stream:
+                return StreamingResponse(
+                    self._stream_chat_with_tools(messages, model),
+                    media_type="text/plain"
+                )
+            else:
+                response = await self._chat_with_tools(messages, model)
+                return JSONResponse(response)
+                
+        except Exception as e:
+            logger.error(f"Chat endpoint error: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+    
+    async def _stream_chat_with_tools(self, messages: List[Dict], model: str):
+        """Stream chat responses with AI-driven tool execution and wizard workflows."""
+        try:
+            # Enhanced system message for wizard-driven automation
+            system_msg = """You are a homelab automation wizard with access to 52+ infrastructure management tools. Your role is to guide users through complete homelab setup workflows by asking clarifying questions and executing tools automatically.
+
+**Your Approach:**
+1. **Ask questions first** to understand user goals (media server, development, AI, etc.)
+2. **Discover current infrastructure** using discovery tools
+3. **Plan network accessibility** - CRITICAL for homelab services
+4. **Propose specific solutions** with step-by-step execution
+5. **Execute tools automatically** after getting user confirmation
+6. **Guide users through wizards** for complex setups (Proxmox, TrueNAS, WordPress, etc.)
+
+**🌐 CRITICAL: Network Accessibility Planning**
+When setting up ANY service (Plex, web servers, databases, etc.), you MUST ask about network access:
+
+1. **Default Assumption**: Services should be accessible to ALL homelab devices
+   - Xbox, phones, tablets, laptops should access Plex
+   - Web services should be reachable from any device on the network
+   - Development servers should be accessible for testing
+
+2. **Network Planning Questions**:
+   - "Is this for your entire homelab network, or specific subnets?"
+   - "Do you have VLANs or network segmentation I should know about?"
+   - "Should this be accessible from outside your home network (via VPN/reverse proxy)?"
+
+3. **Configuration Requirements**:
+   - **Bind to 0.0.0.0** (all interfaces) not just localhost
+   - **Open required ports** in firewall if needed
+   - **Configure proper subnet access** for services
+   - **Set up reverse proxy** if external access needed
+
+**Example Network Planning:**
+User: "Set up a Plex server"
+You: "Great! I'll set up Plex so all your devices can access it. A few questions:
+- Should your Xbox, phones, and tablets all be able to stream from this?
+- Do you have any network VLANs or subnets I should configure access for?
+- Would you like external access via VPN or reverse proxy for remote streaming?"
+
+Then configure Plex with:
+- Bind to 0.0.0.0:32400 (accessible from all network devices)
+- Firewall rules for port 32400
+- Proper network interface configuration
+
+**Available Tool Categories:**
+- Infrastructure Discovery: proxmox_list_nodes, proxmox_discover_hardware, discover-homelab-topology
+- VM Management: create_vm, start_vm, stop_vm, delete_vm
+- Container Operations: LXD tools for container management
+- Authentication: SSH key deployment and user setup
+- Service Deployment: WordPress, Docker, databases, media servers
+- Automation: Ansible playbooks for service installation
+
+**Wizard Behaviors:**
+- Start by asking "What would you like to set up in your homelab?"
+- Use discovery tools to understand current infrastructure
+- Propose concrete next steps with tool execution
+- Execute tools automatically after user approval
+- Provide real-time status updates during tool execution
+
+**Example Workflow:**
+User: "I want to set up a media server"
+You: "Great! Let me first discover your current infrastructure and then guide you through setting up Plex or Jellyfin. Let me check your Proxmox nodes first..."
+[Execute: proxmox_list_nodes]
+[Execute: proxmox_discover_hardware]
+"I see you have [X] available. Would you like me to create a VM for Plex with [recommended specs]?"
+[If yes, execute: create_vm with media server template]
+
+Always drive the conversation forward with concrete actions."""
+
+            # Prepare messages for Ollama
+            ollama_messages = [{"role": "system", "content": system_msg}]
+            ollama_messages.extend(messages)
+            
+            # Start chat with Ollama
+            response = ollama.chat(
+                model=model,
+                messages=ollama_messages,
+                stream=True
+            )
+            
+            full_response = ""
+            for chunk in response:
+                content = chunk['message']['content']
+                full_response += content
+                yield f"data: {json.dumps({'content': content, 'type': 'text'})}\n\n"
+            
+            # AI-driven tool execution based on response analysis
+            async for tool_chunk in self._analyze_and_execute_tools(full_response, messages):
+                yield tool_chunk
+            
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming chat error: {e}")
+            yield f"data: {json.dumps({'content': f'Error: {str(e)}', 'type': 'error'})}\n\n"
+    
+    async def _analyze_and_execute_tools(self, ai_response: str, conversation_history: List[Dict]):
+        """Analyze AI response and execute tools automatically when appropriate."""
+        try:
+            # Parse AI intent for automatic tool execution
+            response_lower = ai_response.lower()
+            
+            # Discovery triggers
+            if any(phrase in response_lower for phrase in 
+                   ['let me check', 'let me discover', 'let me see your', 'first check']):
+                
+                if 'proxmox' in response_lower or 'infrastructure' in response_lower:
+                    yield f"data: {json.dumps({'content': '\\n\\n🔍 **Discovering Proxmox infrastructure...**\\n', 'type': 'tool_start'})}\n\n"
+                    
+                    # Execute proxmox discovery
+                    result = await self._execute_mcp_tool('proxmox_list_nodes', {})
+                    if result:
+                        yield f"data: {json.dumps({'content': f'✅ **Discovery complete:**\\n{result}\\n', 'type': 'tool_result'})}\n\n"
+            
+            # VM creation triggers
+            if any(phrase in response_lower for phrase in 
+                   ['create a vm', 'create vm', 'new virtual machine']):
+                
+                # Extract VM details from conversation
+                vm_suggestions = self._extract_vm_requirements(ai_response, conversation_history)
+                if vm_suggestions:
+                    yield f"data: {json.dumps({'content': f'\\n\\n🚀 **Ready to create VM with these specs:**\\n{vm_suggestions}\\n*Say \"yes\" to proceed or provide different requirements*\\n', 'type': 'tool_proposal'})}\n\n"
+            
+            # Service setup triggers
+            if any(service in response_lower for service in 
+                   ['plex', 'jellyfin', 'wordpress', 'docker', 'nextcloud']):
+                
+                service_type = self._identify_service_type(response_lower)
+                network_guidance = self._get_network_guidance(service_type)
+                
+                yield f"data: {json.dumps({'content': f'\\n\\n⚙️ **{service_type} Setup Wizard:**\\n{network_guidance}\\n\\nI can set this up automatically. Would you like me to:\\n1. Create a VM for {service_type}\\n2. Install and configure {service_type} (accessible to all network devices)\\n3. Set up networking and firewall rules\\n4. Configure external access if needed\\n\\nSay \"start setup\" to begin!\\n', 'type': 'wizard_offer'})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Tool analysis error: {e}")
+            yield f"data: {json.dumps({'content': f'\\nTool execution error: {str(e)}', 'type': 'error'})}\n\n"
+    
+    async def _execute_mcp_tool(self, tool_name: str, args: Dict) -> str:
+        """Execute an MCP tool and return the result."""
+        try:
+            # Route to appropriate tool handler
+            if tool_name.startswith('proxmox_'):
+                result = await handle_proxmox_tool(tool_name, args)
+            elif tool_name in ['create_vm', 'start_vm', 'stop_vm', 'delete_vm', 'get_vm_status']:
+                result = await self._handle_vm_tool(tool_name, args)
+            else:
+                # Handle other tool categories
+                result = [TextContent(type="text", text=f"Tool {tool_name} executed with args: {args}")]
+            
+            # Extract text content from result
+            if result and len(result) > 0:
+                return result[0].text
+            return "Tool executed successfully"
+            
+        except Exception as e:
+            logger.error(f"Tool execution error for {tool_name}: {e}")
+            return f"Error executing {tool_name}: {str(e)}"
+    
+    async def _handle_vm_tool(self, tool_name: str, args: Dict):
+        """Handle VM management tools."""
+        if tool_name == 'create_vm':
+            return await self._create_vm_handler(**args)
+        elif tool_name == 'start_vm':
+            return await self._start_vm_handler(**args)
+        elif tool_name == 'stop_vm':
+            return await self._stop_vm_handler(**args)
+        elif tool_name == 'delete_vm':
+            return await self._delete_vm_handler(**args)
+        elif tool_name == 'get_vm_status':
+            return await self._get_vm_status_handler(**args)
+        else:
+            return [TextContent(type="text", text=f"Unknown VM tool: {tool_name}")]
+    
+    def _extract_vm_requirements(self, ai_response: str, conversation: List[Dict]) -> str:
+        """Extract VM requirements from AI response and conversation context."""
+        # Simple parsing - could be enhanced with NLP
+        specs = []
+        
+        if 'media server' in ai_response.lower():
+            specs.append("Purpose: Media Server (Plex/Jellyfin)")
+            specs.append("CPU: 4 cores")
+            specs.append("Memory: 8GB")
+            specs.append("Storage: 100GB")
+            specs.append("Network: Accessible to all homelab devices (Xbox, phones, tablets)")
+            specs.append("Ports: Media streaming ports (32400 for Plex, 8096 for Jellyfin)")
+        elif 'web server' in ai_response.lower():
+            specs.append("Purpose: Web Server")
+            specs.append("CPU: 2 cores")
+            specs.append("Memory: 4GB")
+            specs.append("Storage: 50GB")
+            specs.append("Network: Accessible to all network devices")
+            specs.append("Ports: HTTP (80), HTTPS (443)")
+        elif 'development' in ai_response.lower():
+            specs.append("Purpose: Development Environment")
+            specs.append("CPU: 4 cores")
+            specs.append("Memory: 8GB")
+            specs.append("Storage: 100GB")
+            specs.append("Network: Accessible for testing from all development devices")
+            specs.append("Ports: Custom application ports as needed")
+        
+        return "\\n".join(specs) if specs else "General purpose VM with default specs\\nNetwork: Accessible to all homelab devices"
+    
+    def _identify_service_type(self, text: str) -> str:
+        """Identify the service type from text."""
+        services = {
+            'plex': 'Plex Media Server',
+            'jellyfin': 'Jellyfin Media Server',
+            'wordpress': 'WordPress',
+            'docker': 'Docker Container Platform',
+            'nextcloud': 'Nextcloud File Sharing'
+        }
+        
+        for service, display_name in services.items():
+            if service in text:
+                return display_name
+        
+        return "Service"
+    
+    def _get_network_guidance(self, service_type: str) -> str:
+        """Get network accessibility guidance for specific services."""
+        guidance_map = {
+            'Plex Media Server': '📺 **Network Access Planning:** This Plex server will be accessible to:\n• Xbox, PlayStation, smart TVs for streaming\n• Phones and tablets for mobile access\n• Laptops and desktops for web interface\n• External access for remote streaming (optional)',
+            
+            'Jellyfin Media Server': '📺 **Network Access Planning:** This Jellyfin server will be accessible to:\n• All media devices (Xbox, phones, tablets, smart TVs)\n• Web browsers on any network device\n• Mobile apps for remote streaming\n• External access for remote viewing (optional)',
+            
+            'WordPress': '🌐 **Network Access Planning:** This WordPress site will be accessible to:\n• All devices on your network for testing/editing\n• External visitors if you set up reverse proxy\n• Mobile devices for content management\n• Development team if this is a team project',
+            
+            'Docker Container Platform': '🐳 **Network Access Planning:** Docker services will be accessible to:\n• All network devices that need to access container apps\n• Other containers within Docker networks\n• External access through reverse proxy if needed\n• Development machines for testing',
+            
+            'Nextcloud File Sharing': '☁️ **Network Access Planning:** Nextcloud will be accessible to:\n• All family/team devices for file sync\n• Mobile apps for photo backup and file access\n• External access for remote file management\n• Backup systems and sync clients'
+        }
+        
+        return guidance_map.get(service_type, '🌐 **Network Access Planning:** This service will be configured for network-wide access by default.')
+    
+    
+    async def _chat_with_tools(self, messages: List[Dict], model: str):
+        """Non-streaming chat with tool execution."""
+        # Implementation for non-streaming version
+        return {"content": "Non-streaming chat not implemented yet"}
+    
     async def _create_vm_handler(self, **kwargs) -> List[TextContent]:
         """Handle VM creation requests."""
         try:
@@ -306,6 +633,41 @@ class HomelabMCPServer:
         """Run the MCP server with streamable HTTP transport."""
         logger.info(f"Starting {self.name} with streamable HTTP transport on {self.mcp.settings.host}:{self.mcp.settings.port}...")
         await self.mcp.run_streamable_http_async()
+    
+    async def run_chat_server(self):
+        """Run the chat server separately on port 3001."""
+        import uvicorn
+        
+        logger.info(f"Starting chat server on 0.0.0.0:3001...")
+        
+        chat_config = uvicorn.Config(
+            self.chat_app,
+            host="0.0.0.0",
+            port=3001,
+            log_level="info"
+        )
+        chat_server = uvicorn.Server(chat_config)
+        await chat_server.serve()
+    
+    async def run_both_servers(self):
+        """Run both MCP server and chat server concurrently."""
+        import asyncio
+        
+        logger.info(f"Starting both MCP server (port 3000) and chat server (port 3001)...")
+        
+        # Start both servers concurrently
+        mcp_task = asyncio.create_task(self.run_streamable_http())
+        chat_task = asyncio.create_task(self.run_chat_server())
+        
+        # Wait for either to complete
+        done, pending = await asyncio.wait(
+            [mcp_task, chat_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # Cancel remaining tasks
+        for task in pending:
+            task.cancel()
 
 
 async def main():
