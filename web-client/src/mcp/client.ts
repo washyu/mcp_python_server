@@ -40,14 +40,14 @@ export class MCPClient {
     }
   }
 
-  async callTool(toolName: string, arguments: any): Promise<any> {
+  async callTool(toolName: string, args: any): Promise<any> {
     if (!this.isConnected()) {
       throw new Error('Not connected to MCP server');
     }
 
     return await this.makeRequest('tools/call', {
       name: toolName,
-      arguments: arguments
+      arguments: args
     });
   }
 
@@ -100,7 +100,7 @@ export class MCPClient {
   }
 
   // New method for streaming tool execution
-  async executeToolWithStream(toolName: string, arguments: any, onChunk?: (chunk: string) => void): Promise<string> {
+  async executeToolWithStream(toolName: string, args: any, onChunk?: (chunk: string) => void): Promise<string> {
     if (!this.isConnected()) {
       throw new Error('Not connected to MCP server');
     }
@@ -110,7 +110,7 @@ export class MCPClient {
       method: 'tools/call',
       params: {
         name: toolName,
-        arguments: arguments
+        arguments: args
       },
       id: Date.now()
     };

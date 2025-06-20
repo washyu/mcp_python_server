@@ -108,6 +108,33 @@ Open http://localhost:5173 to access the web interface.
 
 See [web-client/CLAUDE.md](web-client/CLAUDE.md) for detailed setup and usage instructions.
 
+## 🐳 Docker Setup (Recommended)
+
+The easiest way to run the complete stack locally is using Docker:
+
+```bash
+# Start everything with Docker Compose
+docker-compose up -d
+
+# Access the services
+# - Web Client: http://localhost:5173
+# - MCP Server: http://localhost:3000
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+**Benefits:**
+- No need to install Python, Node.js, or manage dependencies
+- Isolated environment with proper networking
+- Production-ready configuration
+- Automatic service dependencies and health checks
+
+See [DOCKER.md](DOCKER.md) for complete Docker setup instructions.
+
 ### Testing with Local AI Agent
 
 We provide a complete local testing setup using Ollama:
