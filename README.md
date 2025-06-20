@@ -81,7 +81,32 @@ uv run python main.py --mode http --host localhost --port 3000
 uv run python main.py --mode sse --host localhost --port 3000
 ```
 
-See [HTTP_TRANSPORT.md](docs/HTTP_TRANSPORT.md) for details on the new HTTP transport options.
+See [HTTP_TRANSPORT.md](docs/architecture/HTTP_TRANSPORT.md) for details on the new HTTP transport options.
+
+## 🌐 Web Client
+
+A React/TypeScript web client that demonstrates the HTTP transport capabilities:
+
+```bash
+# Start the MCP server with HTTP transport
+uv run python main.py --mode http --port 3000
+
+# In another terminal, start the web client
+cd web-client
+npm install
+npm run dev
+```
+
+**Features:**
+- **HTTP Transport Integration** - Uses the new streamable HTTP transport
+- **Claude & Ollama Support** - Multiple LLM provider support
+- **Real-time Tool Execution** - Execute all 52+ MCP tools via web interface
+- **Server Context Management** - Switch between different homelab servers
+- **Streaming Responses** - Real-time chat with tool integration
+
+Open http://localhost:5173 to access the web interface.
+
+See [web-client/CLAUDE.md](web-client/CLAUDE.md) for detailed setup and usage instructions.
 
 ### Testing with Local AI Agent
 

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/webstorm-icon-logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ollama Chat Client</title>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Ollama Chat</h1>
+      <div class="controls">
+        <div class="provider-selection">
+          <label for="provider-select">Provider:</label>
+          <select id="provider-select">
+            <option value="ollama">Ollama</option>
+            <option value="claude">Claude API</option>
+          </select>
+        </div>
+        <div class="server-context" id="server-context" style="display: none;">
+          <label for="server-select">Server:</label>
+          <select id="server-select">
+            <option value="">Loading servers...</option>
+          </select>
+        </div>
+        <button id="tools-button" style="display: none;">🔧 Tools</button>
+        <select id="model">
+          <option>Loading models...</option>
+        </select>
+        <div class="checkbox-wrapper">
+          <input type="checkbox" id="show-thinking" />
+          <label for="show-thinking">Show thinking</label>
+        </div>
+      </div>
+    </div>
+    
+    <div id="messages"></div>
+    
+    <div class="input-area">
+      <button id="attach" class="attach-button" title="Attach file">+</button>
+      <input type="file" id="file-input" style="display: none;" multiple accept="*/*" />
+      <textarea id="input" placeholder="Type a message..." rows="1"></textarea>
+      <button id="send">Send</button>
+      <button id="cancel" style="display: none;">Cancel</button>
+    </div>
+    
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "name": "mcp-web-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Web client for Universal Homelab MCP Server with HTTP transport support",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "proxy": "node proxy-server.cjs",
+    "proxy:mjs": "node proxy-server.mjs"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0"
+  },
+  "dependencies": {
+    "@types/marked": "^5.0.2",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.12",
+    "node-fetch": "^3.3.2"
+  }
+}
