@@ -1015,3 +1015,35 @@ services:
 ---
 
 **Current Status**: Infrastructure Intelligence + VM Management Platform is complete. AI agents can now discover resources, create VMs with intelligent placement, and manage full VM lifecycle (start/stop/delete/status). Ready for Ansible service deployment integration.
+
+## 🚀 MCP-Orchestrated Chat Implementation (June 2025)
+
+### Architecture
+- **Port 3000**: MCP Server (HTTP transport) - handles MCP protocol
+- **Port 3001**: Chat Server - handles AI orchestration with tool execution
+- **Port 5173**: Web Client - React/TypeScript interface
+
+### Key Features Implemented
+1. **Wizard-Driven Automation**: AI guides users through setup with clarifying questions
+2. **Automatic Tool Execution**: AI executes MCP tools during conversation based on intent
+3. **Network Accessibility Planning**: Services configured for network-wide access by default
+4. **70+ Available Tools**: Full homelab automation toolkit accessible to AI
+
+### Important Technical Details
+- FastMCP doesn't expose app object - solved by running separate Starlette app on port 3001
+- Chat endpoint at `/api/chat` with streaming support
+- Tools endpoint at `/api/tools` returns all available MCP tools
+- Health check at `/health` on port 3001
+- Docker deployment uses `start_homelab_chat.py` with DOCKER_MODE=true
+
+### Network Accessibility Defaults
+- All services bind to 0.0.0.0 (network-wide access)
+- Xbox, phones, tablets can access media servers
+- Proper port configuration for each service type
+- AI asks about VLANs/subnets during setup
+
+### Known Issues for Next Session
+- Health check may show unhealthy despite working endpoints
+- Need to handle Ollama connection errors gracefully
+- Consider adding retry logic for tool execution
+- May need to improve streaming response handling
