@@ -14,6 +14,7 @@ with minimal human intervention, while educating users about the decisions made.
 
 import asyncio
 import logging
+import re
 from typing import Any, Dict, List
 from mcp.server import FastMCP
 from mcp.types import TextContent
@@ -37,6 +38,10 @@ from src.tools.agent_homelab_tools import AGENT_HOMELAB_TOOLS, handle_agent_home
 from src.tools.homelab_context_tools import HOMELAB_CONTEXT_TOOLS, handle_homelab_context_tool
 from src.tools.ansible_tools import ANSIBLE_TOOLS, handle_ansible_tool
 from src.tools.auth_setup_tools import AUTH_SETUP_TOOLS, handle_auth_setup_tool
+from src.tools.terraform_tools import register_terraform_tools
+from src.tools.system_hardware_discovery import SYSTEM_HARDWARE_TOOLS, handle_system_hardware_tool
+from src.tools.remote_hardware_discovery import REMOTE_HARDWARE_TOOLS, register_remote_hardware_tools
+from src.tools.hardware_discovery_guide import HARDWARE_GUIDE_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +83,7 @@ class HomelabMCPServer:
                     return await handle_auth_setup_tool(tool_name, kwargs)
                 return handler
             
-            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+            self.mcp.tool(tool.name, tool.description)(
                 make_auth_handler(tool.name)
             )
         
@@ -91,7 +96,7 @@ class HomelabMCPServer:
                     return await handle_agent_homelab_tool(tool_name, kwargs)
                 return handler
             
-            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+            self.mcp.tool(tool.name, tool.description)(
                 make_agent_handler(tool.name)
             )
         
@@ -104,7 +109,7 @@ class HomelabMCPServer:
                     return await handle_homelab_context_tool(tool_name, kwargs)
                 return handler
             
-            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+            self.mcp.tool(tool.name, tool.description)(
                 make_context_handler(tool.name)
             )
         
@@ -117,7 +122,7 @@ class HomelabMCPServer:
                     return await handle_proxmox_tool(tool_name, kwargs)
                 return handler
             
-            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+            self.mcp.tool(tool.name, tool.description)(
                 make_proxmox_handler(tool.name)
             )
         
@@ -130,7 +135,7 @@ class HomelabMCPServer:
                     return await handle_lxd_tool(tool_name, kwargs)
                 return handler
             
-            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+            self.mcp.tool(tool.name, tool.description)(
                 make_lxd_handler(tool.name)
             )
         
@@ -143,9 +148,35 @@ class HomelabMCPServer:
                     return await handle_ansible_tool(tool_name, kwargs)
                 return handler
             
-            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+            self.mcp.tool(tool.name, tool.description)(
                 make_ansible_handler(tool.name)
             )
+        
+        # PRIORITY 5.5: Terraform infrastructure-as-code tools
+        register_terraform_tools(self.mcp)
+        logger.info("Registered Terraform infrastructure-as-code tools")
+        
+        # PRIORITY 5.6: Local system hardware discovery tools
+        for tool in SYSTEM_HARDWARE_TOOLS:
+            logger.info(f"Registering System Hardware tool: {tool.name}")
+            
+            def make_hardware_handler(tool_name: str):
+                async def handler(**kwargs) -> List[TextContent]:
+                    return await handle_system_hardware_tool(tool_name, kwargs)
+                return handler
+            
+            self.mcp.tool(tool.name, tool.description)(
+                make_hardware_handler(tool.name)
+            )
+        
+        # PRIORITY 5.7: Remote hardware discovery and context building
+        register_remote_hardware_tools(self.mcp)
+        logger.info("Registered Remote Hardware Discovery tools")
+        
+        # PRIORITY 5.8: Hardware discovery guide tools
+        from src.tools.hardware_discovery_guide import register_hardware_guide_tools
+        register_hardware_guide_tools(self.mcp)
+        logger.info("Registered Hardware Discovery Guide tools")
         
         # PRIORITY 6: User guidance tools (when agent needs human input)
         for tool in HOMELAB_TOOLS:
@@ -156,7 +187,7 @@ class HomelabMCPServer:
                     return await handle_homelab_tool(tool_name, kwargs)
                 return handler
             
-            self.mcp.tool(tool.name, tool.description, tool.inputSchema)(
+            self.mcp.tool(tool.name, tool.description)(
                 make_homelab_handler(tool.name)
             )
         
@@ -187,7 +218,9 @@ class HomelabMCPServer:
             description="Get current status and details of a VM"
         )(self._get_vm_status_handler)
         
-        total_tools = len(AGENT_HOMELAB_TOOLS) + len(HOMELAB_CONTEXT_TOOLS) + len(PROXMOX_TOOLS) + len(LXD_TOOLS) + len(HOMELAB_TOOLS) + 5
+        total_tools = (len(AGENT_HOMELAB_TOOLS) + len(HOMELAB_CONTEXT_TOOLS) + len(PROXMOX_TOOLS) + 
+                      len(LXD_TOOLS) + len(HOMELAB_TOOLS) + len(AUTH_SETUP_TOOLS) + len(ANSIBLE_TOOLS) +
+                      len(SYSTEM_HARDWARE_TOOLS) + len(REMOTE_HARDWARE_TOOLS) + len(HARDWARE_GUIDE_TOOLS) + 5)
         logger.info(f"Successfully registered {total_tools} MCP tools for AI-driven homelab automation")
         logger.info(f"  🤖 Agent Automation: {len(AGENT_HOMELAB_TOOLS)} tools (PRIMARY FEATURE)")
         logger.info(f"  🏠 Homelab Context: {len(HOMELAB_CONTEXT_TOOLS)} tools")
@@ -225,13 +258,22 @@ class HomelabMCPServer:
             
             # Add each tool category with proper JSON serialization
             for tool_set in [PROXMOX_TOOLS, LXD_TOOLS, HOMELAB_TOOLS, AGENT_HOMELAB_TOOLS, 
-                           HOMELAB_CONTEXT_TOOLS, ANSIBLE_TOOLS, AUTH_SETUP_TOOLS]:
+                           HOMELAB_CONTEXT_TOOLS, ANSIBLE_TOOLS, AUTH_SETUP_TOOLS, SYSTEM_HARDWARE_TOOLS,
+                           REMOTE_HARDWARE_TOOLS]:
                 for tool in tool_set:
                     tools.append({
                         "name": tool.name,
                         "description": tool.description,
                         "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
                     })
+            
+            # Add hardware guide tools
+            for tool in HARDWARE_GUIDE_TOOLS:
+                tools.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
+                })
             
             # Add VM management tools
             vm_tools = [
@@ -277,14 +319,32 @@ class HomelabMCPServer:
         """Stream chat responses with AI-driven tool execution and wizard workflows."""
         try:
             # Enhanced system message for wizard-driven automation
-            system_msg = """You are a homelab automation wizard with access to 52+ infrastructure management tools. Your role is to guide users through complete homelab setup workflows by asking clarifying questions and executing tools automatically.
+            system_msg = """You are a homelab automation wizard with access to 75+ infrastructure management tools. Your role is to guide users through complete homelab setup workflows by asking clarifying questions and executing tools.
+
+**CRITICAL: How to Execute Tools**
+When you need to call a tool, use this TEMPLATE format - just replace the placeholders:
+
+For hardware discovery:
+```
+EXECUTE_TOOL: discover_remote_system IP: 192.168.50.41
+```
+
+For VM creation:
+```
+EXECUTE_TOOL: create_vm NAME: my-server CORES: 4 MEMORY: 8
+```
+
+IMPORTANT: 
+- Just replace the placeholder values (IP, NAME, CORES, etc.)
+- No JSON syntax needed - much simpler!
+- Templates prevent malformed syntax
 
 **Your Approach:**
 1. **Ask questions first** to understand user goals (media server, development, AI, etc.)
-2. **Discover current infrastructure** using discovery tools
+2. **Discover current infrastructure** using discovery tools WITH PROPER SYNTAX
 3. **Plan network accessibility** - CRITICAL for homelab services
 4. **Propose specific solutions** with step-by-step execution
-5. **Execute tools automatically** after getting user confirmation
+5. **Execute tools using the EXECUTE_TOOL format** - DO NOT pretend or hallucinate results
 6. **Guide users through wizards** for complex setups (Proxmox, TrueNAS, WordPress, etc.)
 
 **🌐 CRITICAL: Network Accessibility Planning**
@@ -320,11 +380,33 @@ Then configure Plex with:
 
 **Available Tool Categories:**
 - Infrastructure Discovery: proxmox_list_nodes, proxmox_discover_hardware, discover-homelab-topology
+- Hardware Discovery: discover_remote_system (remote hardware specs), discover_local_hardware (MCP server hardware), hardware_discovery_guide (tool selection help)
 - VM Management: create_vm, start_vm, stop_vm, delete_vm
 - Container Operations: LXD tools for container management
-- Authentication: SSH key deployment and user setup
+- Authentication: SSH key deployment and user setup, setup_remote_ssh_access
 - Service Deployment: WordPress, Docker, databases, media servers
 - Automation: Ansible playbooks for service installation
+
+**CRITICAL: Hardware Discovery Tool Selection**
+- **For server hardware specs**: ALWAYS use `EXECUTE_TOOL: discover_remote_system IP: X.X.X.X`
+- **For network scanning only**: Use `discover-homelab-topology` 
+- **For MCP server hardware**: Use `discover_local_hardware`
+- **For tool guidance**: Use `hardware_discovery_guide`
+
+**More Template Examples:**
+```
+EXECUTE_TOOL: create_vm NAME: web-server CORES: 4 MEMORY: 8 DISK: 100
+EXECUTE_TOOL: start_vm ID: 203
+EXECUTE_TOOL: proxmox_list_nodes
+```
+
+**CRITICAL: Tool Execution Rules**
+1. NEVER hallucinate or make up tool outputs - if a tool fails, say "Tool failed" and explain why
+2. ALWAYS use the EXECUTE_TOOL format when calling tools
+3. WAIT for actual tool results before continuing
+4. If a tool fails due to SSH access, say "Cannot access system via SSH" and offer setup_remote_ssh_access
+5. If hardware discovery fails, say "Unable to determine hardware specs" - DO NOT guess or make up specifications
+6. NEVER provide hardware specs unless the tool succeeds and returns real data
 
 **Wizard Behaviors:**
 - Start by asking "What would you like to set up in your homelab?"
@@ -347,23 +429,119 @@ Always drive the conversation forward with concrete actions."""
             ollama_messages = [{"role": "system", "content": system_msg}]
             ollama_messages.extend(messages)
             
-            # Start chat with Ollama
+            # Start chat with Ollama with parameters to prevent cutoff
             response = ollama.chat(
                 model=model,
                 messages=ollama_messages,
-                stream=True
+                stream=True,
+                options={
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "stop": [],  # Don't stop on any specific tokens
+                    "num_predict": 4096,  # Much longer responses to prevent cutoffs
+                    "repeat_penalty": 1.1,  # Reduce repetition
+                }
             )
             
             full_response = ""
+            buffer = ""
+            
             for chunk in response:
                 content = chunk['message']['content']
                 full_response += content
+                buffer += content
+                
+                # Always stream the content first
                 yield f"data: {json.dumps({'content': content, 'type': 'text'})}\n\n"
             
-            # AI-driven tool execution based on response analysis
+            # After AI completes generation, check for tool commands in the full response
+            if "EXECUTE_TOOL:" in full_response:
+                
+                # Try template format first, then fallback to JSON format
+                patterns = [
+                    r'EXECUTE_TOOL:\s*(\w+)\s+(.+?)(?:\n|$)',  # Template format: EXECUTE_TOOL: tool_name KEY: value KEY: value
+                    r'EXECUTE_TOOL:\s*(\w+)\s+ARGUMENTS:\s*(\{[^}]*\})',  # Complete JSON (backward compatibility)
+                    r'EXECUTE_TOOL:\s*(\w+).*?ARGUMENTS:\s*(\{[^}]*\})',  # Multi-line JSON
+                    r'EXECUTE_TOOL:\s*(\w+)\s*ARGUMENTS:\s*(\{[^}]*\})',  # No newline JSON
+                    r'EXECUTE_TOOL:\s*(\w+).*?ARGUMENTS:\s*(\{.*?\})',    # Greedy JSON
+                    r'EXECUTE_TOOL:\s*(\w+).*?ARGUMENTS:\s*(\{[^}]*)',    # Incomplete JSON
+                ]
+                
+                tool_match = None
+                matched_pattern = None
+                for i, pattern in enumerate(patterns):
+                    tool_match = re.search(pattern, full_response, re.DOTALL)
+                    if tool_match:
+                        matched_pattern = i
+                        break
+                
+                if tool_match:
+                    tool_name = tool_match.group(1)
+                    raw_args = tool_match.group(2)
+                    
+                    # Parse based on pattern type
+                    if matched_pattern == 0:  # Template format
+                        tool_args = self._parse_template_args(tool_name, raw_args)
+                    else:  # JSON format
+                        # Try to fix incomplete JSON for later patterns
+                        if matched_pattern is not None and matched_pattern >= 5 and tool_name == "discover_remote_system" and '"ip_address"' in raw_args:
+                            # Extract just the IP address if it's there
+                            ip_match = re.search(r'"ip_address":\s*"([^"]*)"', raw_args)
+                            if ip_match:
+                                ip_address = ip_match.group(1)
+                                raw_args = f'{{"ip_address": "{ip_address}"}}'
+                        
+                        try:
+                            tool_args = json.loads(raw_args)
+                        except json.JSONDecodeError as e:
+                            yield f"data: {json.dumps({'content': f'\\n❌ Invalid JSON: {str(e)}\\n', 'type': 'error'})}\n\n"
+                            tool_args = None
+                    
+                    # Only execute if we have valid tool_args
+                    if tool_args is not None:
+                        try:
+                            # Execute the tool
+                            yield f"data: {json.dumps({'content': f'\\n\\n🔧 Executing tool: {tool_name}...\\n', 'type': 'tool_start'})}\n\n"
+                            
+                            result = await self._execute_mcp_tool(tool_name, tool_args)
+                            
+                            yield f"data: {json.dumps({'content': f'\\n📊 Tool Result:\\n{result}\\n\\n', 'type': 'tool_result'})}\n\n"
+                            
+                            # Add tool result to conversation for AI to see
+                            messages.append({"role": "assistant", "content": f"EXECUTE_TOOL: {tool_name}\\nARGUMENTS: {json.dumps(tool_args)}"})
+                            messages.append({"role": "system", "content": f"Tool Result: {result}"})
+                            
+                            # Continue conversation with tool result
+                            continuation_messages = [{"role": "system", "content": system_msg}]
+                            continuation_messages.extend(messages)
+                            
+                            # Get AI's response to the tool result
+                            continuation = ollama.chat(
+                                model=model,
+                                messages=continuation_messages,
+                                stream=True,
+                                options={
+                                    "temperature": 0.7,
+                                    "top_p": 0.9,
+                                    "stop": [],
+                                    "num_predict": 4096,
+                                    "repeat_penalty": 1.1,
+                                }
+                            )
+                            
+                            for cont_chunk in continuation:
+                                cont_content = cont_chunk['message']['content']
+                                yield f"data: {json.dumps({'content': cont_content, 'type': 'text'})}\n\n"
+                            
+                        except Exception as e:
+                            yield f"data: {json.dumps({'content': f'\\n❌ Tool execution error: {str(e)}\\n', 'type': 'error'})}\n\n"
+                # If no match found, tool execution fails silently (AI will continue normally)
+            
+            # Still analyze for other patterns (backwards compatibility)
             async for tool_chunk in self._analyze_and_execute_tools(full_response, messages):
                 yield tool_chunk
             
+            # Always send done indicator when streaming completes
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             
         except Exception as e:
@@ -387,6 +565,23 @@ Always drive the conversation forward with concrete actions."""
                     result = await self._execute_mcp_tool('proxmox_list_nodes', {})
                     if result:
                         yield f"data: {json.dumps({'content': f'✅ **Discovery complete:**\\n{result}\\n', 'type': 'tool_result'})}\n\n"
+            
+            # Hardware discovery triggers - extract IP addresses and use correct tool
+            import re
+            ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
+            ips_found = re.findall(ip_pattern, ai_response)
+            
+            if any(phrase in response_lower for phrase in 
+                   ['hardware', 'system specs', 'check the hardware', 'scan the device', 'discover hardware']):
+                
+                if ips_found:
+                    ip_address = ips_found[0]  # Use first IP found
+                    yield f"data: {json.dumps({'content': f'\\n\\n🔍 **Scanning hardware at {ip_address}...**\\n', 'type': 'tool_start'})}\n\n"
+                    
+                    # Execute remote hardware discovery
+                    result = await self._execute_mcp_tool('discover_remote_system', {'ip_address': ip_address})
+                    if result:
+                        yield f"data: {json.dumps({'content': f'✅ **Hardware scan complete:**\\n{result}\\n', 'type': 'tool_result'})}\n\n"
             
             # VM creation triggers
             if any(phrase in response_lower for phrase in 
@@ -418,6 +613,28 @@ Always drive the conversation forward with concrete actions."""
                 result = await handle_proxmox_tool(tool_name, args)
             elif tool_name in ['create_vm', 'start_vm', 'stop_vm', 'delete_vm', 'get_vm_status']:
                 result = await self._handle_vm_tool(tool_name, args)
+            elif tool_name == 'discover_remote_system':
+                from src.tools.remote_hardware_discovery import remote_discovery
+                discovery_result = await remote_discovery.discover_remote_hardware(**args)
+                # Format the result for display
+                if discovery_result.get('hardware'):
+                    hw = discovery_result['hardware']
+                    text = f"🔍 **Remote System Discovery: {args.get('ip_address')}**\n\n"
+                    text += f"**System Information:**\n"
+                    text += f"- Hostname: {hw.hostname}\n"
+                    text += f"- OS: {hw.distribution}\n"
+                    text += f"- Kernel: {hw.kernel}\n"
+                    if hw.cpu:
+                        text += f"\n**CPU:**\n"
+                        text += f"- Model: {hw.cpu.model}\n"
+                        text += f"- Cores: {hw.cpu.cores}, Threads: {hw.cpu.threads}\n"
+                    if hw.memory:
+                        text += f"\n**Memory:**\n"
+                        text += f"- Total: {hw.memory.total_gb:.1f} GB\n"
+                    result = [TextContent(type="text", text=text)]
+                else:
+                    error_msg = f"❌ Hardware discovery failed: {', '.join(discovery_result.get('errors', ['Unknown error']))}"
+                    result = [TextContent(type="text", text=error_msg)]
             else:
                 # Handle other tool categories
                 result = [TextContent(type="text", text=f"Tool {tool_name} executed with args: {args}")]
@@ -506,6 +723,39 @@ Always drive the conversation forward with concrete actions."""
         }
         
         return guidance_map.get(service_type, '🌐 **Network Access Planning:** This service will be configured for network-wide access by default.')
+    
+    def _parse_template_args(self, tool_name: str, template_str: str) -> Dict[str, Any]:
+        """Parse template format arguments into a dictionary."""
+        args = {}
+        
+        # Parse KEY: value pairs from template string
+        # Example: "IP: 192.168.50.41 USER: root" -> {"ip_address": "192.168.50.41", "ssh_user": "root"}
+        
+        pairs = re.findall(r'(\w+):\s*([^\s]+(?:\s+[^\s:]+)*?)(?=\s+\w+:|$)', template_str)
+        
+        for key, value in pairs:
+            key = key.upper()
+            value = value.strip()
+            
+            # Map template keys to tool parameter names
+            if tool_name == "discover_remote_system":
+                if key == "IP":
+                    args["ip_address"] = value
+                elif key == "USER":
+                    args["ssh_user"] = value
+            elif tool_name == "create_vm":
+                if key == "NAME":
+                    args["vm_name"] = value
+                elif key == "CORES":
+                    args["cpu_cores"] = int(value)
+                elif key == "MEMORY":
+                    args["memory_gb"] = int(value)
+                elif key == "DISK":
+                    args["disk_size_gb"] = int(value)
+                elif key == "NODE":
+                    args["target_node"] = value
+            
+        return args
     
     
     async def _chat_with_tools(self, messages: List[Dict], model: str):

@@ -36,7 +36,7 @@ HOMELAB_CONTEXT_TOOLS = [
     ),
     Tool(
         name="discover-homelab-topology",
-        description="Discover and refresh complete homelab network topology",
+        description="Network scan to find devices (basic discovery only - for hardware details use discover_remote_system with IP address)",
         inputSchema={
             "type": "object",
             "properties": {
@@ -352,6 +352,19 @@ async def _discover_homelab_topology(context_manager: HomelabContextManager, kwa
     force_refresh = kwargs.get("force_refresh", False)
     network_range = kwargs.get("network_range")
     
+    # Check if user is trying to get hardware info for a specific IP
+    if "-ip" in str(kwargs) or any(key in kwargs for key in ["ip", "ipaddress", "ip_address"]):
+        ip_value = kwargs.get("ip") or kwargs.get("ipaddress") or kwargs.get("ip_address") or "unknown"
+        return [TextContent(
+            type="text",
+            text=f"⚠️ **Wrong tool for hardware discovery!**\n\n"
+                 f"You're trying to get hardware details for a specific IP ({ip_value}).\n\n"
+                 f"**Use this instead:**\n"
+                 f"`discover_remote_system ip_address=\"{ip_value}\"`\n\n"
+                 f"This will give you actual hardware specs (CPU, memory, storage, etc.)\n\n"
+                 f"Note: discover-homelab-topology only does network scanning, not hardware discovery."
+        )]
+    
     # Check if refresh is needed
     if not force_refresh:
         is_stale = await context_manager.is_context_stale()
@@ -375,6 +388,8 @@ async def _discover_homelab_topology(context_manager: HomelabContextManager, kwa
             result_text += f"• {error}\\n"
     
     result_text += f"\\n✅ Homelab context refreshed successfully."
+    result_text += f"\\n\\n💡 **Tip:** To get hardware details for a specific device, use:"
+    result_text += f"\\n`discover_remote_system ip_address=\"<IP>\"`"
     
     return [TextContent(type="text", text=result_text)]
 

@@ -537,3 +537,69 @@ class HomelabContextManager:
                 stats["errors"].append(f"Error processing {ip}: {str(e)}")
         
         return stats
+    
+    async def update_terraform_context(self, vm_name: str, terraform_context: Dict[str, Any]) -> None:
+        """Store Terraform state information in homelab context."""
+        topology = await self.load_topology()
+        
+        # Initialize terraform section if it doesn't exist
+        if "terraform_state" not in topology:
+            topology["terraform_state"] = {}
+        
+        topology["terraform_state"][vm_name] = terraform_context
+        await self.save_topology(topology)
+    
+    async def get_terraform_context(self, vm_name: str) -> Optional[Dict[str, Any]]:
+        """Get Terraform state information for a VM."""
+        topology = await self.load_topology()
+        return topology.get("terraform_state", {}).get(vm_name)
+    
+    async def remove_terraform_context(self, vm_name: str) -> None:
+        """Remove Terraform state information for a VM."""
+        topology = await self.load_topology()
+        if "terraform_state" in topology and vm_name in topology["terraform_state"]:
+            del topology["terraform_state"][vm_name]
+            await self.save_topology(topology)
+    
+    async def list_terraform_managed_vms(self) -> List[Dict[str, Any]]:
+        """List all VMs managed by Terraform."""
+        topology = await self.load_topology()
+        terraform_state = topology.get("terraform_state", {})
+        
+        return [
+            {
+                "vm_name": vm_name,
+                "terraform_state_dir": context.get("terraform_state_dir"),
+                "created_at": context.get("created_at"),
+                "vm_id": context.get("terraform_outputs", {}).get("vm_id", {}).get("value"),
+                "node_name": context.get("terraform_outputs", {}).get("node_name", {}).get("value")
+            }
+            for vm_name, context in terraform_state.items()
+        ]
+    
+    async def update_ansible_execution_context(self, execution_name: str, execution_context: Dict[str, Any]) -> None:
+        """Store Ansible execution context in homelab topology."""
+        topology = await self.load_topology()
+        
+        # Initialize ansible_executions section if it doesn't exist
+        if "ansible_executions" not in topology:
+            topology["ansible_executions"] = {}
+        
+        topology["ansible_executions"][execution_name] = execution_context
+        await self.save_topology(topology)
+    
+    async def get_ansible_execution_context(self, execution_name: str) -> Optional[Dict[str, Any]]:
+        """Get specific Ansible execution context."""
+        topology = await self.load_topology()
+        return topology.get("ansible_executions", {}).get(execution_name)
+    
+    async def list_ansible_executions(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """List recent Ansible executions."""
+        topology = await self.load_topology()
+        ansible_executions = topology.get("ansible_executions", {})
+        
+        # Sort by execution time, most recent first
+        executions = list(ansible_executions.values())
+        executions.sort(key=lambda x: x.get("executed_at", ""), reverse=True)
+        
+        return executions[:limit]

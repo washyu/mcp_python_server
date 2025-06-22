@@ -185,13 +185,20 @@ class UniversalAuthManager:
                     "supported_methods": ["api_token", "ssh_key"]
                 }
             
-            return {
+            result = {
                 "success": test_result.get("success", False),
                 "message": f"Proxmox authentication setup complete using {auth_method}",
                 "auth_config": auth_config,
                 "test_result": test_result,
                 "provider_type": "proxmox"
             }
+            
+            # Trigger automatic discovery if authentication was successful
+            if result["success"]:
+                await self._trigger_auto_discovery(endpoint, "proxmox", auth_config)
+                result["message"] += ". Auto-discovery initiated."
+            
+            return result
             
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -630,3 +637,36 @@ class UniversalAuthManager:
     async def _test_vmware_api_access(self, auth_config: AuthenticationConfig) -> Dict[str, Any]:
         """Test VMware API access."""
         return {"success": True, "message": "VMware API test placeholder"}
+    
+    async def _trigger_auto_discovery(self, endpoint: str, provider_type: str, auth_config: AuthenticationConfig) -> None:
+        """Trigger automatic discovery after successful authentication setup."""
+        try:
+            if provider_type == "proxmox":
+                # Import here to avoid circular imports
+                from .proxmox_discovery import ProxmoxDiscoveryTools
+                
+                # Create discovery instance
+                discovery_tools = ProxmoxDiscoveryTools()
+                
+                # Trigger full discovery
+                logger.info(f"Triggering auto-discovery for Proxmox: {endpoint}")
+                
+                # Run discovery in background (don't await to avoid blocking)
+                asyncio.create_task(self._run_proxmox_discovery(discovery_tools))
+                
+            # Add other provider types here when needed
+            elif provider_type in ["truenas", "docker", "vmware", "lxd"]:
+                logger.info(f"Auto-discovery for {provider_type} not yet implemented")
+            
+        except Exception as e:
+            logger.error(f"Failed to trigger auto-discovery for {provider_type}: {e}")
+    
+    async def _run_proxmox_discovery(self, discovery_tools) -> None:
+        """Run Proxmox discovery in background."""
+        try:
+            # Refresh inventory
+            await discovery_tools.refresh_inventory(force_refresh=True)
+            logger.info("Auto-discovery completed for Proxmox")
+            
+        except Exception as e:
+            logger.error(f"Auto-discovery failed for Proxmox: {e}")

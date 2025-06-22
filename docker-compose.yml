@@ -5,14 +5,16 @@ services:
       dockerfile: Dockerfile
     container_name: universal-homelab-mcp
     ports:
-      - "3000:3000"
+      - "3000:8000"
       - "3001:3001"
     environment:
       - DEBUG=true
       - OLLAMA_HOST=http://host.docker.internal:11434
     volumes:
       - ./inventory:/app/inventory
+      - ./terraform:/app/terraform
       - ./.env:/app/.env:ro
+      - ~/.ssh:/root/.ssh:ro  # For SSH key access (read-only)
     networks:
       - mcp-network
     restart: unless-stopped
