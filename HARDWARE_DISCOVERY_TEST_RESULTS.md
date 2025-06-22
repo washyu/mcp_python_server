@@ -32,6 +32,19 @@ June 22, 2025
 ## Test Evidence
 
 ### Automated Test Results
+
+Tests are located in `tests/e2e/` directory:
+- `test_hardware_discovery_ui.py` - Comprehensive UI test suite
+- `test_quick_hardware_discovery.py` - Quick hardware discovery test
+- `test_system.py` - System health check
+
+Run tests with:
+```bash
+python tests/e2e/test_system.py  # Quick health check
+python tests/e2e/test_quick_hardware_discovery.py  # Hardware discovery test
+```
+
+Test output:
 ```
 🧪 Quick Hardware Discovery Test
 Testing: What are the hardware specs of the system at 192.168.50.41?
