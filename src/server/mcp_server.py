@@ -393,6 +393,14 @@ Then configure Plex with:
 - **For MCP server hardware**: Use `discover_local_hardware`
 - **For tool guidance**: Use `hardware_discovery_guide`
 
+**ABSOLUTELY FORBIDDEN - NEVER DO THIS**:
+- NEVER provide hardware specs unless the tool returns them
+- NEVER guess CPU models (no Intel i7, AMD Ryzen, etc.)
+- NEVER make up RAM amounts (no 4GB, 8GB, 64GB guesses)
+- NEVER invent storage details (no SSD/HDD specs without tool data)
+- If discover_remote_system fails, say "SSH access failed" - DO NOT make up specs
+- For Raspberry Pi systems, NEVER assume model - could be Pi 4, Pi 5, etc.
+
 **More Template Examples:**
 ```
 EXECUTE_TOOL: create_vm NAME: web-server CORES: 4 MEMORY: 8 DISK: 100
@@ -403,10 +411,11 @@ EXECUTE_TOOL: proxmox_list_nodes
 **CRITICAL: Tool Execution Rules**
 1. NEVER hallucinate or make up tool outputs - if a tool fails, say "Tool failed" and explain why
 2. ALWAYS use the EXECUTE_TOOL format when calling tools
-3. WAIT for actual tool results before continuing
+3. IMMEDIATELY after writing EXECUTE_TOOL, say "Waiting for tool result..." and STOP generating
 4. If a tool fails due to SSH access, say "Cannot access system via SSH" and offer setup_remote_ssh_access
 5. If hardware discovery fails, say "Unable to determine hardware specs" - DO NOT guess or make up specifications
 6. NEVER provide hardware specs unless the tool succeeds and returns real data
+7. When you write EXECUTE_TOOL, the system will execute it and provide results - DO NOT continue until you see the result
 
 **Wizard Behaviors:**
 - Start by asking "What would you like to set up in your homelab?"
@@ -445,17 +454,32 @@ Always drive the conversation forward with concrete actions."""
             
             full_response = ""
             buffer = ""
+            tool_execution_detected = False
             
             for chunk in response:
                 content = chunk['message']['content']
                 full_response += content
                 buffer += content
                 
-                # Always stream the content first
-                yield f"data: {json.dumps({'content': content, 'type': 'text'})}\n\n"
+                # Check for tool execution pattern in buffer
+                if not tool_execution_detected and "EXECUTE_TOOL:" in buffer:
+                    # Check if we have a complete tool command (look for newline or enough content)
+                    if '\n' in buffer[buffer.index("EXECUTE_TOOL:"):] or len(buffer[buffer.index("EXECUTE_TOOL:"):]) > 50:
+                        tool_pattern = r'EXECUTE_TOOL:\s*(\w+)\s+(.+?)(?:\n|$)'
+                        tool_match = re.search(tool_pattern, buffer)
+                        
+                        if tool_match:
+                            tool_execution_detected = True
+                            # Stop streaming AI response - we need to execute the tool
+                            yield f"data: {json.dumps({'content': content, 'type': 'text'})}\n\n"
+                            break
+                
+                # Stream content if no tool execution detected yet
+                if not tool_execution_detected:
+                    yield f"data: {json.dumps({'content': content, 'type': 'text'})}\n\n"
             
-            # After AI completes generation, check for tool commands in the full response
-            if "EXECUTE_TOOL:" in full_response:
+            # Process tool execution if detected (either during streaming or after)
+            if tool_execution_detected or "EXECUTE_TOOL:" in full_response:
                 
                 # Try template format first, then fallback to JSON format
                 patterns = [
@@ -509,7 +533,10 @@ Always drive the conversation forward with concrete actions."""
                             
                             # Add tool result to conversation for AI to see
                             messages.append({"role": "assistant", "content": f"EXECUTE_TOOL: {tool_name}\\nARGUMENTS: {json.dumps(tool_args)}"})
-                            messages.append({"role": "system", "content": f"Tool Result: {result}"})
+                            
+                            # Add stronger instruction if tool failed
+                            if "failed" in result.lower() or "error" in result.lower():
+                                messages.append({"role": "system", "content": f"Tool Result: {result}\\n\\nCRITICAL: The tool FAILED. You MUST NOT provide any hardware specifications. Instead, say exactly: 'Unable to determine hardware specs - SSH access failed. Would you like me to help set up SSH access?' DO NOT mention any CPU models, RAM amounts, or storage details."})
                             
                             # Continue conversation with tool result
                             continuation_messages = [{"role": "system", "content": system_msg}]
