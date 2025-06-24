@@ -1,72 +1,167 @@
-#!/usr/bin/env python3
-"""
-Test script for the MCP server.
-This simulates how an AI client would interact with the server.
-"""
+"""Tests for the MCP server."""
 
 import json
-import asyncio
-import sys
+import pytest
+from unittest.mock import AsyncMock, patch
+from src.homelab_mcp.server import HomelabMCPServer
 
 
-async def test_hello_world():
-    """Test the hello_world tool by sending MCP protocol messages."""
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.server.ensure_mcp_ssh_key')
+async def test_server_initialize(mock_ensure_key):
+    """Test server initialization response."""
+    server = HomelabMCPServer()
     
-    # This is a simple test that shows what messages would be exchanged
-    print("Testing MCP Server Communication...")
-    print("\n1. Client -> Server: Initialize")
-    init_request = {
+    # Mock SSH key generation
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
+    
+    request = {
         "jsonrpc": "2.0",
+        "id": 1,
         "method": "initialize",
-        "params": {
-            "protocolVersion": "0.1.0",
-            "capabilities": {}
-        },
-        "id": 1
+        "params": {}
     }
-    print(json.dumps(init_request, indent=2))
     
-    print("\n2. Client -> Server: List Tools")
-    list_tools_request = {
+    response = await server.handle_request(request)
+    
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 1
+    assert "result" in response
+    assert response["result"]["protocolVersion"] == "2024-11-05"
+    assert response["result"]["serverInfo"]["name"] == "homelab-mcp"
+    
+    # Verify SSH key was generated on first initialization
+    mock_ensure_key.assert_called_once()
+    
+    # Second initialization should not regenerate key
+    response2 = await server.handle_request(request)
+    assert response2["jsonrpc"] == "2.0"
+    mock_ensure_key.assert_called_once()  # Still only called once
+
+
+@pytest.mark.asyncio
+async def test_tools_list():
+    """Test listing available tools."""
+    server = HomelabMCPServer()
+    
+    request = {
         "jsonrpc": "2.0",
+        "id": 2,
         "method": "tools/list",
-        "params": {},
-        "id": 2
+        "params": {}
     }
-    print(json.dumps(list_tools_request, indent=2))
     
-    print("\n3. Client -> Server: Call hello_world tool")
-    call_tool_request = {
+    response = await server.handle_request(request)
+    
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 2
+    assert "result" in response
+    assert "tools" in response["result"]
+    
+    tools = response["result"]["tools"]
+    assert len(tools) == 10  # Original 4 + 6 new sitemap tools
+    
+    # Check tool names and descriptions
+    tool_names = [tool.get("description") for tool in tools]
+    assert any("greeting" in desc for desc in tool_names)
+    assert any("SSH" in desc for desc in tool_names)
+    assert any("setup mcp_admin" in desc for desc in tool_names)
+    assert any("Verify" in desc for desc in tool_names)
+    
+    # Check new sitemap tools are included
+    assert any("network site map" in desc for desc in tool_names)
+    assert any("topology" in desc for desc in tool_names)
+    assert any("deployment" in desc for desc in tool_names)
+
+
+@pytest.mark.asyncio
+async def test_hello_world_tool():
+    """Test the hello_world tool."""
+    server = HomelabMCPServer()
+    
+    request = {
         "jsonrpc": "2.0",
+        "id": 3,
         "method": "tools/call",
         "params": {
-            "name": "hello_world",
-            "arguments": {}
-        },
-        "id": 3
+            "name": "hello_world"
+        }
     }
-    print(json.dumps(call_tool_request, indent=2))
     
-    print("\nExpected response:")
-    expected_response = {
+    response = await server.handle_request(request)
+    
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 3
+    assert "result" in response
+    assert "content" in response["result"]
+    assert len(response["result"]["content"]) > 0
+    assert response["result"]["content"][0]["type"] == "text"
+    assert "Hello" in response["result"]["content"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_method():
+    """Test handling of unknown method."""
+    server = HomelabMCPServer()
+    
+    request = {
         "jsonrpc": "2.0",
-        "result": {
-            "content": [
-                {
-                    "type": "text",
-                    "text": "Hello, World!"
-                }
-            ]
-        },
-        "id": 3
+        "id": 4,
+        "method": "unknown/method",
+        "params": {}
     }
-    print(json.dumps(expected_response, indent=2))
+    
+    response = await server.handle_request(request)
+    
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 4
+    assert "error" in response
+    assert response["error"]["code"] == -32603
+    assert "Unknown method" in response["error"]["message"]
 
 
-if __name__ == "__main__":
-    print("MCP Server Test Script")
-    print("=" * 50)
-    asyncio.run(test_hello_world())
-    print("\n" + "=" * 50)
-    print("To actually run the server, use: python main.py")
-    print("Or with uv: uv run python main.py")
+@pytest.mark.asyncio
+async def test_unknown_tool():
+    """Test handling of unknown tool."""
+    server = HomelabMCPServer()
+    
+    request = {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "tools/call",
+        "params": {
+            "name": "nonexistent_tool"
+        }
+    }
+    
+    response = await server.handle_request(request)
+    
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 5
+    assert "error" in response
+    assert "Unknown tool" in response["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_tool_missing_params():
+    """Test ssh_discover tool with missing required parameters."""
+    server = HomelabMCPServer()
+    
+    request = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": {
+            "name": "ssh_discover",
+            "arguments": {
+                "hostname": "192.168.1.100"
+                # Missing username
+            }
+        }
+    }
+    
+    response = await server.handle_request(request)
+    
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 6
+    assert "error" in response or "error" in json.loads(response["result"]["content"][0]["text"])
