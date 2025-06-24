@@ -9,6 +9,7 @@ import sys
 from typing import Any, Dict, Optional
 
 from .tools import get_available_tools, execute_tool
+from .ssh_tools import ensure_mcp_ssh_key
 
 
 class HomelabMCPServer:
@@ -16,6 +17,7 @@ class HomelabMCPServer:
     
     def __init__(self):
         self.tools = get_available_tools()
+        self.ssh_key_initialized = False
     
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle incoming MCP requests."""
@@ -25,6 +27,11 @@ class HomelabMCPServer:
         
         try:
             if method == "initialize":
+                # Initialize SSH key on first request
+                if not self.ssh_key_initialized:
+                    await ensure_mcp_ssh_key()
+                    self.ssh_key_initialized = True
+                
                 return self._success_response(request_id, {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {

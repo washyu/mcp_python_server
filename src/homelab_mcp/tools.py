@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from .ssh_tools import ssh_discover_system
+from .ssh_tools import ssh_discover_system, setup_remote_mcp_admin, verify_mcp_admin_access
 
 
 # Tool registry
@@ -26,11 +26,11 @@ TOOLS = {
                 },
                 "username": {
                     "type": "string", 
-                    "description": "SSH username"
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)"
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (if not using key)"
+                    "description": "SSH password (not needed for mcp_admin after setup)"
                 },
                 "key_path": {
                     "type": "string",
@@ -38,6 +38,45 @@ TOOLS = {
                 }
             },
             "required": ["hostname", "username"]
+        }
+    },
+    "setup_mcp_admin": {
+        "description": "SSH into a remote system and setup mcp_admin user with admin permissions and SSH key access",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the target system"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "Admin username to connect with (must have sudo access)"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "Password for the admin user"
+                },
+                "force_update_key": {
+                    "type": "boolean",
+                    "description": "Force update SSH key even if mcp_admin already has keys (default: true)",
+                    "default": True
+                }
+            },
+            "required": ["hostname", "username", "password"]
+        }
+    },
+    "verify_mcp_admin": {
+        "description": "Verify SSH key access to mcp_admin account on a remote system",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the target system"
+                }
+            },
+            "required": ["hostname"]
         }
     }
 }
@@ -55,6 +94,14 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
     
     elif tool_name == "ssh_discover":
         result = await ssh_discover_system(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "setup_mcp_admin":
+        result = await setup_remote_mcp_admin(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "verify_mcp_admin":
+        result = await verify_mcp_admin_access(**arguments)
         return {"content": [{"type": "text", "text": result}]}
     
     else:

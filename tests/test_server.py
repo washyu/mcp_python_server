@@ -7,9 +7,13 @@ from src.homelab_mcp.server import HomelabMCPServer
 
 
 @pytest.mark.asyncio
-async def test_server_initialize():
+@patch('src.homelab_mcp.server.ensure_mcp_ssh_key')
+async def test_server_initialize(mock_ensure_key):
     """Test server initialization response."""
     server = HomelabMCPServer()
+    
+    # Mock SSH key generation
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
     
     request = {
         "jsonrpc": "2.0",
@@ -25,6 +29,14 @@ async def test_server_initialize():
     assert "result" in response
     assert response["result"]["protocolVersion"] == "2024-11-05"
     assert response["result"]["serverInfo"]["name"] == "homelab-mcp"
+    
+    # Verify SSH key was generated on first initialization
+    mock_ensure_key.assert_called_once()
+    
+    # Second initialization should not regenerate key
+    response2 = await server.handle_request(request)
+    assert response2["jsonrpc"] == "2.0"
+    mock_ensure_key.assert_called_once()  # Still only called once
 
 
 @pytest.mark.asyncio
@@ -47,12 +59,14 @@ async def test_tools_list():
     assert "tools" in response["result"]
     
     tools = response["result"]["tools"]
-    assert len(tools) == 2
+    assert len(tools) == 4  # hello_world, ssh_discover, setup_mcp_admin, verify_mcp_admin
     
     # Check tool names and descriptions
     tool_names = [tool.get("description") for tool in tools]
     assert any("greeting" in desc for desc in tool_names)
     assert any("SSH" in desc for desc in tool_names)
+    assert any("setup mcp_admin" in desc for desc in tool_names)
+    assert any("Verify" in desc for desc in tool_names)
 
 
 @pytest.mark.asyncio
