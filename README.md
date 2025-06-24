@@ -1,80 +1,147 @@
-# Minimal MCP Hello World Setup
+# Homelab MCP Server
 
-A minimal Model Context Protocol (MCP) implementation with a Hello World tool integrated with Ollama AI and a React web client.
+A Model Context Protocol (MCP) server for managing and monitoring homelab systems via SSH.
 
-## 🚀 Quick Start
+## Overview
 
-1. **Start the services:**
-   ```bash
-   docker-compose -f docker-compose.minimal.yml up -d
-   ```
+This MCP server provides tools for AI assistants to discover and monitor systems in your homelab environment. It follows the MCP specification for stdio-based communication.
 
-2. **Start the React web client:**
-   ```bash
-   cd web-client/minimal-chat
-   npm install
-   npm run dev
-   ```
+## Features
 
-3. **Open your browser:**
-   - Navigate to http://localhost:5175
-   - Type "hello" to trigger the MCP tool
-   - Watch Ollama AI respond with the MCP tool output
+- **System Discovery**: SSH into systems to gather hardware and software information
+- **Standardized Interface**: Follows the MCP protocol for tool interaction
+- **Extensible**: Easy to add new tools and capabilities
 
-## 🏗️ Architecture
+## Available Tools
 
-- **🤖 Ollama (Docker)**: `localhost:11434` with llama3 model
-- **🔧 MCP Server**: `localhost:3001` with hello_world tool
-- **💻 React Web Client**: `localhost:5175` with proxy to MCP server
+### `hello_world`
+A simple test tool that returns a greeting message.
 
-## 🔧 Components
+### `ssh_discover`
+SSH into a remote system and gather comprehensive system information including:
+- CPU details (model, cores)
+- Memory usage
+- Disk usage
+- Network interfaces
+- Operating system information
+- System uptime
 
-### MCP Server (`chat_server_direct.py`)
-- Direct implementation of `hello_world_tool()` function
-- Starlette web server with streaming chat endpoint
-- Detects "hello" in messages and calls MCP tool
-- Integrates tool response into Ollama prompt
+## Installation
 
-### Docker Setup (`docker-compose.minimal.yml`)
-- **ollama**: Runs ollama/ollama with llama3 model
-- **mcp-minimal**: Python server with MCP integration
-- **Networking**: Bridge network for service communication
+1. Clone the repository:
+```bash
+git clone <your-repo-url>
+cd mcp_python_server
+```
 
-### React Web Client (`web-client/minimal-chat/`)
-- TypeScript React app with streaming chat interface
-- Vite proxy configuration for MCP server integration
-- Server-Sent Events (SSE) for real-time responses
-- Violet chat bubbles for AI responses
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-## 🧪 Test the Flow
+3. For development (includes testing tools):
+```bash
+pip install -r requirements-dev.txt
+```
 
-1. User types: "hello there!"
-2. MCP server detects "hello" → calls `hello_world_tool()`
-3. Tool returns: "Hello from the Homelab MCP server"
-4. Ollama AI receives prompt with tool response
-5. AI generates response mentioning the MCP tool output
-6. Web client displays streaming response
+## Usage
 
-## 📁 Project Structure
+### Running the Server
+
+```bash
+python run_server.py
+```
+
+The server communicates via stdio (stdin/stdout) using the MCP protocol.
+
+### Testing with JSON-RPC
+
+You can test the server by sending JSON-RPC requests:
+
+```bash
+# List available tools
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | python run_server.py
+
+# Call hello_world tool
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"hello_world"}}' | python run_server.py
+
+# Discover a system via SSH
+echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ssh_discover","arguments":{"hostname":"192.168.1.100","username":"user","password":"pass"}}}' | python run_server.py
+```
+
+### Integration with AI Assistants
+
+This server is designed to work with AI assistants that support the Model Context Protocol. Configure your assistant to run:
+
+```
+python /path/to/run_server.py
+```
+
+## Development
+
+### Project Structure
 
 ```
 mcp_python_server/
-├── chat_server_direct.py           # MCP server with hello_world tool
-├── docker-compose.minimal.yml      # Docker services
-├── pyproject.toml                  # Python dependencies
-└── web-client/minimal-chat/        # React web client
-    ├── src/App.tsx                 # Main React component
-    ├── src/App.css                 # Styling (violet bubbles)
-    └── vite.config.ts              # Proxy configuration
+├── src/
+│   └── homelab_mcp/
+│       ├── __init__.py
+│       ├── server.py      # Main MCP server
+│       ├── tools.py       # Tool registry and execution
+│       └── ssh_tools.py   # SSH-based discovery tools
+├── tests/
+│   ├── test_server.py     # Server tests
+│   ├── test_tools.py      # Tool tests
+│   └── test_ssh_tools.py  # SSH tool tests
+├── requirements.txt       # Production dependencies
+├── requirements-dev.txt   # Development dependencies
+├── pytest.ini            # Pytest configuration
+└── run_server.py         # Entry point
 ```
 
-## ✅ Working Features
+### Running Tests
 
-- ✅ **MCP Tool Integration**: hello_world tool called automatically
-- ✅ **Ollama AI Integration**: AI uses tool output in responses  
-- ✅ **Streaming Responses**: Real-time chat with SSE
-- ✅ **Docker Deployment**: Containerized Ollama and MCP server
-- ✅ **Web Interface**: Clean React UI with proper styling
-- ✅ **End-to-End Flow**: Complete Ollama ↔ MCP ↔ Web Client flow
+```bash
+# Run all tests
+pytest
 
-Perfect for learning MCP concepts and building more complex integrations!
+# Run with coverage
+pytest --cov=src/homelab_mcp
+
+# Run specific test file
+pytest tests/test_server.py
+```
+
+### Adding New Tools
+
+1. Define the tool schema in `src/homelab_mcp/tools.py`:
+```python
+TOOLS["new_tool"] = {
+    "description": "Tool description",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            # Define parameters
+        },
+        "required": []
+    }
+}
+```
+
+2. Implement the tool logic in the appropriate module
+
+3. Add the execution case in `execute_tool()` function
+
+4. Write tests for the new tool
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Write tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
