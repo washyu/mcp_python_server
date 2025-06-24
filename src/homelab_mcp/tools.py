@@ -190,6 +190,246 @@ TOOLS = {
             },
             "required": ["device_id"]
         }
+    },
+    "deploy_vm": {
+        "description": "Deploy a VM/container on a specified platform (Docker, LXD, Proxmox)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["docker", "lxd", "proxmox"],
+                    "description": "Target platform for VM deployment"
+                },
+                "vm_name": {
+                    "type": "string",
+                    "description": "Name for the VM/container",
+                    "default": "homelab-vm"
+                },
+                "target_host": {
+                    "type": "string",
+                    "description": "Target host IP address for deployment"
+                },
+                "ssh_user": {
+                    "type": "string",
+                    "description": "SSH username for target host"
+                },
+                "ssh_password": {
+                    "type": "string",
+                    "description": "SSH password for target host"
+                },
+                "vm_config": {
+                    "type": "object",
+                    "properties": {
+                        "cpu_cores": {"type": "integer", "default": 2},
+                        "memory_gb": {"type": "integer", "default": 2},
+                        "ssh_port": {"type": "integer", "default": 22}
+                    }
+                }
+            },
+            "required": ["platform", "target_host", "ssh_user", "ssh_password"]
+        }
+    },
+    "delete_vm": {
+        "description": "Delete/destroy a VM/container on a specified platform",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["docker", "lxd", "proxmox"],
+                    "description": "Platform where VM is deployed"
+                },
+                "vm_name": {
+                    "type": "string",
+                    "description": "Name of the VM/container to delete"
+                },
+                "target_host": {
+                    "type": "string",
+                    "description": "Target host IP address"
+                },
+                "ssh_user": {
+                    "type": "string",
+                    "description": "SSH username for target host"
+                },
+                "ssh_password": {
+                    "type": "string",
+                    "description": "SSH password for target host"
+                }
+            },
+            "required": ["platform", "vm_name", "target_host", "ssh_user", "ssh_password"]
+        }
+    },
+    "list_vms": {
+        "description": "List all VMs/containers on a target host across all platforms",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_host": {
+                    "type": "string",
+                    "description": "Target host IP address"
+                },
+                "ssh_user": {
+                    "type": "string",
+                    "description": "SSH username for target host"
+                },
+                "ssh_password": {
+                    "type": "string",
+                    "description": "SSH password for target host"
+                },
+                "platforms": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["docker", "lxd", "proxmox"]},
+                    "default": ["docker", "lxd"],
+                    "description": "Platforms to check for VMs"
+                }
+            },
+            "required": ["target_host", "ssh_user", "ssh_password"]
+        }
+    },
+    "control_vm": {
+        "description": "Control VM/container state (start, stop, restart)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["docker", "lxd", "proxmox"],
+                    "description": "Platform where VM is deployed"
+                },
+                "vm_name": {
+                    "type": "string",
+                    "description": "Name of the VM/container to control"
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["start", "stop", "restart"],
+                    "description": "Action to perform on the VM"
+                },
+                "target_host": {
+                    "type": "string",
+                    "description": "Target host IP address"
+                },
+                "ssh_user": {
+                    "type": "string",
+                    "description": "SSH username for target host"
+                },
+                "ssh_password": {
+                    "type": "string",
+                    "description": "SSH password for target host"
+                }
+            },
+            "required": ["platform", "vm_name", "action", "target_host", "ssh_user", "ssh_password"]
+        }
+    },
+    "get_vm_status": {
+        "description": "Get detailed status and resource usage for a specific VM/container",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["docker", "lxd", "proxmox"],
+                    "description": "Platform where VM is deployed"
+                },
+                "vm_name": {
+                    "type": "string",
+                    "description": "Name of the VM/container to check"
+                },
+                "target_host": {
+                    "type": "string",
+                    "description": "Target host IP address"
+                },
+                "ssh_user": {
+                    "type": "string",
+                    "description": "SSH username for target host"
+                },
+                "ssh_password": {
+                    "type": "string",
+                    "description": "SSH password for target host"
+                }
+            },
+            "required": ["platform", "vm_name", "target_host", "ssh_user", "ssh_password"]
+        }
+    },
+    "get_vm_logs": {
+        "description": "Get logs from a VM/container",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["docker", "lxd", "proxmox"],
+                    "description": "Platform where VM is deployed"
+                },
+                "vm_name": {
+                    "type": "string",
+                    "description": "Name of the VM/container"
+                },
+                "target_host": {
+                    "type": "string",
+                    "description": "Target host IP address"
+                },
+                "ssh_user": {
+                    "type": "string",
+                    "description": "SSH username for target host"
+                },
+                "ssh_password": {
+                    "type": "string",
+                    "description": "SSH password for target host"
+                },
+                "lines": {
+                    "type": "integer",
+                    "default": 50,
+                    "description": "Number of log lines to retrieve"
+                },
+                "follow": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Follow logs in real-time (limited support)"
+                }
+            },
+            "required": ["platform", "vm_name", "target_host", "ssh_user", "ssh_password"]
+        }
+    },
+    "manage_vm_services": {
+        "description": "Manage services inside a VM/container (list, start, stop, status)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["docker", "lxd", "proxmox"],
+                    "description": "Platform where VM is deployed"
+                },
+                "vm_name": {
+                    "type": "string",
+                    "description": "Name of the VM/container"
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "start", "stop", "restart", "status"],
+                    "description": "Service management action"
+                },
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service (required for start/stop/restart/status actions)"
+                },
+                "target_host": {
+                    "type": "string",
+                    "description": "Target host IP address"
+                },
+                "ssh_user": {
+                    "type": "string",
+                    "description": "SSH username for target host"
+                },
+                "ssh_password": {
+                    "type": "string",
+                    "description": "SSH password for target host"
+                }
+            },
+            "required": ["platform", "vm_name", "action", "target_host", "ssh_user", "ssh_password"]
+        }
     }
 }
 
@@ -267,5 +507,88 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
             "changes": changes
         }, indent=2)
         return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "deploy_vm":
+        from .vm_manager import deploy_vm_on_platform
+        result = await deploy_vm_on_platform(
+            platform=arguments["platform"],
+            vm_name=arguments.get("vm_name", "homelab-vm"),
+            target_host=arguments["target_host"],
+            ssh_user=arguments["ssh_user"],
+            ssh_password=arguments["ssh_password"],
+            vm_config=arguments.get("vm_config", {})
+        )
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "delete_vm":
+        from .vm_manager import delete_vm_on_platform
+        result = await delete_vm_on_platform(
+            platform=arguments["platform"],
+            vm_name=arguments["vm_name"],
+            target_host=arguments["target_host"],
+            ssh_user=arguments["ssh_user"],
+            ssh_password=arguments["ssh_password"]
+        )
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "list_vms":
+        from .vm_manager import list_vms_on_host
+        result = await list_vms_on_host(
+            target_host=arguments["target_host"],
+            ssh_user=arguments["ssh_user"],
+            ssh_password=arguments["ssh_password"],
+            platforms=arguments.get("platforms", ["docker", "lxd"])
+        )
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "control_vm":
+        from .vm_operations import control_vm_state
+        result = await control_vm_state(
+            platform=arguments["platform"],
+            vm_name=arguments["vm_name"],
+            action=arguments["action"],
+            target_host=arguments["target_host"],
+            ssh_user=arguments["ssh_user"],
+            ssh_password=arguments["ssh_password"]
+        )
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "get_vm_status":
+        from .vm_operations import get_vm_detailed_status
+        result = await get_vm_detailed_status(
+            platform=arguments["platform"],
+            vm_name=arguments["vm_name"],
+            target_host=arguments["target_host"],
+            ssh_user=arguments["ssh_user"],
+            ssh_password=arguments["ssh_password"]
+        )
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "get_vm_logs":
+        from .vm_operations import get_vm_logs
+        result = await get_vm_logs(
+            platform=arguments["platform"],
+            vm_name=arguments["vm_name"],
+            target_host=arguments["target_host"],
+            ssh_user=arguments["ssh_user"],
+            ssh_password=arguments["ssh_password"],
+            lines=arguments.get("lines", 50),
+            follow=arguments.get("follow", False)
+        )
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "manage_vm_services":
+        from .vm_operations import manage_vm_services
+        result = await manage_vm_services(
+            platform=arguments["platform"],
+            vm_name=arguments["vm_name"],
+            action=arguments["action"],
+            target_host=arguments["target_host"],
+            ssh_user=arguments["ssh_user"],
+            ssh_password=arguments["ssh_password"],
+            service_name=arguments.get("service_name")
+        )
+        return {"content": [{"type": "text", "text": result}]}
+    
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
