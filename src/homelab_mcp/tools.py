@@ -267,6 +267,5 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
             "changes": changes
         }, indent=2)
         return {"content": [{"type": "text", "text": result}]}
-    
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

@@ -1,154 +1,265 @@
-# Ansible MCP Server
+# Homelab MCP Server
 
-A Model Context Protocol (MCP) server for managing homelab infrastructure with Ansible.
+A Model Context Protocol (MCP) server for managing and monitoring homelab systems via SSH.
 
-**Platform Support**: Linux-first design optimized for homelab environments (Proxmox, Ubuntu, Debian). Windows users should use WSL2 for development.
+## Overview
 
-## Quick Start
+This MCP server provides tools for AI assistants to discover and monitor systems in your homelab environment. It follows the MCP specification for stdio-based communication.
 
-### Installation
+## Features
 
+- **System Discovery**: SSH into systems to gather hardware and software information
+- **SSH Key Management**: Automatic SSH key generation for secure authentication
+- **Remote Setup**: Automatically configure remote systems with mcp_admin user
+- **Standardized Interface**: Follows the MCP protocol for tool interaction
+- **Extensible**: Easy to add new tools and capabilities
+
+## Available Tools
+
+### `hello_world`
+A simple test tool that returns a greeting message.
+
+### `ssh_discover`
+SSH into a remote system and gather comprehensive system information including:
+- CPU details (model, cores)
+- Memory usage
+- Disk usage
+- Network interfaces
+- Operating system information
+- System uptime
+
+**Note**: When using username `mcp_admin`, the tool automatically uses the MCP's SSH key if available. No password is required after running `setup_mcp_admin` on the target system.
+
+### `setup_mcp_admin`
+SSH into a remote system using admin credentials and set up the `mcp_admin` user with:
+- User creation (if not exists)
+- Sudo group membership
+- SSH key authentication (using MCP's generated key)
+- Passwordless sudo access
+
+Parameters:
+- `hostname`: Target system IP or hostname
+- `username`: Admin username with sudo access
+- `password`: Admin password
+- `force_update_key` (optional, default: true): Force update SSH key even if mcp_admin already has other keys
+
+### `verify_mcp_admin`
+Verify SSH key access to the `mcp_admin` account on a remote system:
+- Tests SSH key authentication
+- Verifies sudo privileges
+- Returns connection status
+
+## Installation
+
+1. Clone the repository:
 ```bash
-# Install dependencies using uv
-uv sync
-
-# Or using pip
-pip install -e .
-
-# Copy and configure environment variables
-cp .env.example .env
-# Edit .env with your configuration
+git clone <your-repo-url>
+cd mcp_python_server
 ```
 
-### Prerequisites for Local Testing
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-1. **Install Ollama** (for local LLM):
-   
-   **On Linux/macOS:**
-   ```bash
-   curl -fsSL https://ollama.com/install.sh | sh
-   ollama serve
-   ollama pull llama3.2:3b
-   ```
-   
-   **On Windows (with WSL development):**
-   - Install Ollama on Windows from https://ollama.com/download
-   - Start Ollama on Windows (it runs in the system tray)
-   - Pull a model in Windows: `ollama pull llama3.2:3b`
-   
-   **For WSL users:**
-   ```bash
-   # Edit .env file and set OLLAMA_HOST to your Windows IP:
-   # OLLAMA_HOST=http://192.168.x.x:11434
-   
-   # Or run our setup script to help find the right address
-   ./setup_wsl.sh
-   ```
-   
-   See [WSL_SETUP.md](./WSL_SETUP.md) for detailed WSL configuration instructions.
+3. For development (includes testing tools):
+```bash
+pip install -r requirements-dev.txt
+```
+
+## Usage
 
 ### Running the Server
 
 ```bash
-# Run the MCP server with WebSocket transport (default)
-uv run python main.py
-
-# Or with specific port
-uv run python main.py --port 8765
-
-# For Claude Desktop compatibility (stdio transport)
-uv run python main.py --transport stdio
+python run_server.py
 ```
 
-### Testing with Local AI Agent
+The server communicates via stdio (stdin/stdout) using the MCP protocol.
 
-We provide a complete local testing setup using Ollama:
+### SSH Key Management
 
-1. **Simple Integration Test**:
-   ```bash
-   # Verify everything is working
-   python simple_test.py
-   ```
+The MCP server automatically generates an SSH key pair on first initialization:
+- Private key: `~/.ssh/mcp_admin_rsa`
+- Public key: `~/.ssh/mcp_admin_rsa.pub`
 
-2. **Interactive AI Agent**:
-   ```bash
-   # Start the MCP server (in one terminal)
-   uv run python main.py
-   
-   # Run the interactive agent (in another terminal)
-   uv run python -m src.agents.websocket_agent
-   ```
+This key is used for:
+1. Authenticating as `mcp_admin` on remote systems after setup
+2. Enabling passwordless SSH access for system management
+3. Automatic authentication when using `ssh_discover` with username `mcp_admin`
 
-   This creates a chat interface where you can ask the AI to use the MCP tools.
+### Testing with JSON-RPC
 
-3. **Protocol Test** (shows raw MCP messages):
-   ```bash
-   # View the test protocol messages
-   python test_server.py
-   ```
+You can test the server by sending JSON-RPC requests:
 
-## MCP Tools
+```bash
+# List available tools
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | python run_server.py
 
-Currently implemented:
-- `hello_world` - A simple tool that returns "Hello, World!"
+# Call hello_world tool
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"hello_world"}}' | python run_server.py
 
-## Testing Example
+# Discover a system via SSH (with password)
+echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ssh_discover","arguments":{"hostname":"192.168.1.100","username":"user","password":"pass"}}}' | python run_server.py
 
-When running `test_agent.py`, you can interact with the AI:
+# Discover using mcp_admin (no password needed after setup)
+echo '{"jsonrpc":"2.0","id":3b,"method":"tools/call","params":{"name":"ssh_discover","arguments":{"hostname":"192.168.1.100","username":"mcp_admin"}}}' | python run_server.py
 
-```
-You: Please call the hello world tool
-AI: I'll call the hello_world tool for you.
+# Setup mcp_admin on a remote system
+echo '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"setup_mcp_admin","arguments":{"hostname":"192.168.1.100","username":"admin","password":"adminpass"}}}' | python run_server.py
 
-Calling tool: hello_world
-Tool result: Hello, World!
+# Verify mcp_admin access
+echo '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"verify_mcp_admin","arguments":{"hostname":"192.168.1.100"}}}' | python run_server.py
+
+# Use ssh_discover with mcp_admin (no password needed after setup)
+echo '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ssh_discover","arguments":{"hostname":"192.168.1.100","username":"mcp_admin"}}}' | python run_server.py
 ```
 
-## Configuration
+### Integration with AI Assistants
 
-All configuration is managed through the `.env` file. Key settings include:
-
-- `OLLAMA_HOST` - URL for Ollama API (important for WSL users)
-- `OLLAMA_MODEL` - Default AI model to use
-- `PROXMOX_*` - Proxmox server credentials (for future features)
-- `ANSIBLE_*` - Ansible configuration options
-- `DEBUG` - Enable debug logging
-
-See `.env.example` for all available options.
-
-## Project Structure
+This server is designed to work with AI assistants that support the Model Context Protocol. Configure your assistant to run:
 
 ```
-mcp_python_server/
-├── main.py              # Entry point
-├── config.py            # Configuration management
-├── src/
-│   ├── server/         # MCP server implementations
-│   │   ├── server.py   # stdio transport
-│   │   └── websocket_server.py
-│   ├── client/         # MCP client libraries
-│   │   └── websocket_client.py
-│   └── agents/         # AI agent implementations
-│       └── websocket_agent.py
-├── tests/              # Test files
-├── examples/           # Example implementations
-├── scripts/            # Utility scripts
-├── docs/               # Documentation
-├── tools/              # MCP tools (future)
-└── utils/              # Utilities (future)
+python /path/to/run_server.py
 ```
 
-The server supports both:
-- **WebSocket transport** (default) - Better for testing and web integrations
-- **stdio transport** - For Claude Desktop compatibility
+### Typical Workflow
 
-Both transports implement the same MCP protocol (JSON-RPC 2.0).
+1. **Initial Setup**: The MCP automatically generates its SSH key on first run
+2. **Configure Remote System**: Use `setup_mcp_admin` with admin credentials to:
+   - Create the `mcp_admin` user on the target system
+   - Install the MCP's public key for authentication
+   - Grant sudo privileges
+3. **Verify Access**: Use `verify_mcp_admin` to confirm setup was successful
+4. **Manage Systems**: Use `ssh_discover` with username `mcp_admin` for passwordless access
+
+Example workflow:
+```bash
+# 1. Setup mcp_admin on a new system
+{"method":"tools/call","params":{"name":"setup_mcp_admin","arguments":{"hostname":"192.168.1.50","username":"pi","password":"raspberry"}}}
+
+# 2. Verify the setup worked
+{"method":"tools/call","params":{"name":"verify_mcp_admin","arguments":{"hostname":"192.168.1.50"}}}
+
+# 3. Now discover system info without needing passwords
+{"method":"tools/call","params":{"name":"ssh_discover","arguments":{"hostname":"192.168.1.50","username":"mcp_admin"}}}
+```
+
+### Handling Key Updates
+
+If the `mcp_admin` user already exists but has a different SSH key, the `setup_mcp_admin` tool will automatically update it by default. You can control this behavior:
+
+```bash
+# Force update the SSH key (default behavior)
+{"method":"tools/call","params":{"name":"setup_mcp_admin","arguments":{"hostname":"192.168.1.50","username":"pi","password":"raspberry","force_update_key":true}}}
+
+# Keep existing keys (only add if no MCP key exists)
+{"method":"tools/call","params":{"name":"setup_mcp_admin","arguments":{"hostname":"192.168.1.50","username":"pi","password":"raspberry","force_update_key":false}}}
+```
+
+When `force_update_key` is true (default), the tool will:
+1. Remove any existing MCP keys (identified by the `mcp_admin@` comment)
+2. Add the current MCP's public key
+3. Preserve any other SSH keys the user might have
 
 ## Development
 
-This is a Python-based MCP server that will provide tools for:
-- Infrastructure discovery (Proxmox, bare metal, network devices)
-- Ansible playbook execution
-- Template management
-- Standard Operating Procedures (SOPs)
-- Security scanning
+### Project Structure
+
+```
+mcp_python_server/
+├── src/
+│   └── homelab_mcp/
+│       ├── __init__.py
+│       ├── server.py      # Main MCP server
+│       ├── tools.py       # Tool registry and execution
+│       └── ssh_tools.py   # SSH-based discovery tools
+├── tests/
+│   ├── integration/       # Integration tests (require Docker)
+│   │   ├── __init__.py
+│   │   ├── conftest.py    # Test fixtures and setup
+│   │   └── test_ssh_integration.py
+│   ├── test_server.py     # Server unit tests
+│   ├── test_tools.py      # Tool unit tests
+│   └── test_ssh_tools.py  # SSH tool unit tests
+├── docker/
+│   └── test-ubuntu/       # Docker setup for integration tests
+│       └── Dockerfile
+├── scripts/
+│   └── run-integration-tests.sh  # Integration test runner
+├── docker-compose.test.yml       # Test container orchestration
+├── requirements.txt       # Production dependencies
+├── requirements-dev.txt   # Development dependencies
+├── pytest.ini            # Pytest configuration
+└── run_server.py         # Entry point
+```
+
+### Running Tests
+
+#### Unit Tests
+```bash
+# Run all unit tests (fast, no Docker required)
+pytest tests/ -m "not integration"
+
+# Run with coverage
+pytest tests/ -m "not integration" --cov=src/homelab_mcp
+
+# Run specific test file
+pytest tests/test_server.py
+```
+
+#### Integration Tests
+```bash
+# Prerequisites: Docker and docker-compose must be installed and running
+
+# Run integration tests (requires Docker)
+./scripts/run-integration-tests.sh
+
+# Or run manually
+pytest tests/integration/ -m integration -v
+
+# Run specific integration test
+pytest tests/integration/test_ssh_integration.py::TestSSHIntegration::test_full_mcp_admin_setup_workflow -v
+```
+
+#### All Tests
+```bash
+# Run all tests (unit + integration)
+pytest
+
+# Note: Integration tests will be skipped if Docker is not available
+```
+
+### Adding New Tools
+
+1. Define the tool schema in `src/homelab_mcp/tools.py`:
+```python
+TOOLS["new_tool"] = {
+    "description": "Tool description",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            # Define parameters
+        },
+        "required": []
+    }
+}
+```
+
+2. Implement the tool logic in the appropriate module
+
+3. Add the execution case in `execute_tool()` function
+
+4. Write tests for the new tool
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Write tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request

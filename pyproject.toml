@@ -16,11 +16,16 @@ dependencies = [
     "aiohttp>=3.11.11",
     "aiofiles>=24.1.0",
     "cryptography>=42.0.0",
+    "pyyaml>=6.0",
+    "asyncssh>=2.14.0",
+    "paramiko>=3.0.0",
+    "ansible>=2.9.0",
+    "jsonschema>=4.24.0",
 ]
 
 [project.optional-dependencies]
 secure = [
-    "keyring>=25.0.0",  # For system keyring support
+    "keyring>=25.0.0", # For system keyring support
 ]
 dev = [
     "pytest>=8.0.0",
@@ -28,4 +33,11 @@ dev = [
     "pytest-cov>=5.0.0",
     "pytest-mock>=3.14.0",
     "aioresponses>=0.7.6",  # Mock aiohttp requests
+    "jsonschema>=4.0.0",   # JSON schema validation
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
 ]

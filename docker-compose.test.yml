@@ -1,0 +1,21 @@
+services:
+  test-ubuntu:
+    build:
+      context: ./docker/test-ubuntu
+      dockerfile: Dockerfile
+    container_name: mcp-test-ubuntu
+    hostname: test-ubuntu
+    ports:
+      - "2222:22"  # SSH port mapping
+    networks:
+      - mcp-test-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "22"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  mcp-test-network:
+    driver: bridge
