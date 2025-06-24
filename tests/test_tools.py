@@ -10,9 +10,11 @@ def test_get_available_tools():
     """Test getting available tools."""
     tools = get_available_tools()
     
-    assert len(tools) == 2
+    assert len(tools) == 4
     assert "hello_world" in tools
     assert "ssh_discover" in tools
+    assert "setup_mcp_admin" in tools
+    assert "verify_mcp_admin" in tools
     
     # Check hello_world tool schema
     hello_tool = tools["hello_world"]
