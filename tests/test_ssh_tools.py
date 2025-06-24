@@ -18,25 +18,35 @@ from src.homelab_mcp.ssh_tools import (
 @patch('src.homelab_mcp.ssh_tools.asyncssh.connect')
 async def test_ssh_discover_success(mock_connect):
     """Test successful SSH discovery."""
-    # Mock command results
+    # Mock command results - in the order they are executed by ssh_discover_system
+    # Only the commands that will actually be executed when CPU model succeeds on first try
     hostname_result = MagicMock()
     hostname_result.exit_status = 0
     hostname_result.stdout = "raspberrypi"
     
-    cpu_result = MagicMock()
-    cpu_result.exit_status = 0
-    cpu_result.stdout = "model name\t: Intel Core i5\n4"
+    # nproc command for CPU cores
+    nproc_result = MagicMock()
+    nproc_result.exit_status = 0
+    nproc_result.stdout = "4"
     
+    # CPU model name command (succeeds, so fallback methods won't be called)
+    cpu_model_result = MagicMock()
+    cpu_model_result.exit_status = 0
+    cpu_model_result.stdout = "model name\t: Intel Core i5"
+    
+    # Memory command
     mem_result = MagicMock()
     mem_result.exit_status = 0
     mem_result.stdout = """              total        used        free      shared  buff/cache   available
 Mem:           7.7G        2.1G        3.9G        123M        1.7G        5.3G"""
     
+    # Disk command
     disk_result = MagicMock()
     disk_result.exit_status = 0
     disk_result.stdout = """Filesystem      Size  Used Avail Use% Mounted on
 /dev/sda1        20G  5.5G   14G  30% /"""
     
+    # Network command
     net_result = MagicMock()
     net_result.exit_status = 0
     net_result.stdout = json.dumps([
@@ -49,10 +59,12 @@ Mem:           7.7G        2.1G        3.9G        123M        1.7G        5.3G"
         }
     ])
     
+    # Uptime command
     uptime_result = MagicMock()
     uptime_result.exit_status = 0
     uptime_result.stdout = "up 2 days, 3 hours, 45 minutes"
     
+    # OS command
     os_result = MagicMock()
     os_result.exit_status = 0
     os_result.stdout = 'PRETTY_NAME="Ubuntu 22.04.3 LTS"'
@@ -63,10 +75,18 @@ Mem:           7.7G        2.1G        3.9G        123M        1.7G        5.3G"
     
     async def mock_run(*args, **kwargs):
         nonlocal call_count
-        results = [hostname_result, cpu_result, mem_result, disk_result, net_result, uptime_result, os_result]
-        result = results[call_count]
-        call_count += 1
-        return result
+        # Commands in actual order: hostname, nproc, cpu model, free, df, ip, uptime, os-release
+        results = [hostname_result, nproc_result, cpu_model_result, mem_result, disk_result, net_result, uptime_result, os_result]
+        if call_count < len(results):
+            result = results[call_count]
+            call_count += 1
+            return result
+        else:
+            # Return a default failure result for any extra calls
+            default_result = MagicMock()
+            default_result.exit_status = 1
+            default_result.stdout = ""
+            return default_result
     
     mock_conn.run = mock_run
     

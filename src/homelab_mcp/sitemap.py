@@ -182,19 +182,35 @@ class NetworkSiteMap:
             
             # Identify resource-constrained devices
             if device.get('cpu_cores') and device.get('cpu_cores') <= 2:
-                if device.get('memory_total') and 'G' in str(device['memory_total']):
-                    try:
-                        memory_gb = float(device['memory_total'].rstrip('G'))
-                        if memory_gb <= 2:
-                            analysis['resource_utilization']['low_resources'].append({
-                                'hostname': device['hostname'],
-                                'cpu_cores': device['cpu_cores'],
-                                'memory': device['memory_total']
-                            })
-                    except (ValueError, AttributeError):
-                        pass
+                if device.get('memory_total'):
+                    memory_gb = self._parse_memory_gb(device['memory_total'])
+                    if memory_gb <= 2:
+                        analysis['resource_utilization']['low_resources'].append({
+                            'hostname': device['hostname'],
+                            'cpu_cores': device['cpu_cores'],
+                            'memory': device['memory_total']
+                        })
         
         return analysis
+    
+    def _parse_memory_gb(self, memory_str: str) -> float:
+        """Parse memory string and return value in GB."""
+        if not memory_str:
+            return 0.0
+        
+        memory_str = str(memory_str).strip()
+        if memory_str.endswith('Gi'):
+            try:
+                return float(memory_str.rstrip('Gi'))
+            except (ValueError, AttributeError):
+                return 0.0
+        elif memory_str.endswith('G'):
+            try:
+                return float(memory_str.rstrip('G'))
+            except (ValueError, AttributeError):
+                return 0.0
+        else:
+            return 0.0
     
     def suggest_deployments(self) -> Dict[str, Any]:
         """Suggest optimal deployment locations based on current network state."""
@@ -214,12 +230,7 @@ class NetworkSiteMap:
             # Load balancer candidates (high CPU, good memory)
             cpu_cores = device.get('cpu_cores') or 0
             if cpu_cores >= 4:
-                memory_gb = 0
-                if device.get('memory_total') and 'G' in str(device['memory_total']):
-                    try:
-                        memory_gb = float(device['memory_total'].rstrip('G'))
-                    except (ValueError, AttributeError):
-                        pass
+                memory_gb = self._parse_memory_gb(device.get('memory_total'))
                 
                 if memory_gb >= 4:
                     suggestions['load_balancer_candidates'].append({
@@ -232,12 +243,7 @@ class NetworkSiteMap:
                 try:
                     disk_usage = int(device['disk_use_percent'].rstrip('%'))
                     if disk_usage < 50:  # Plenty of disk space
-                        memory_gb = 0
-                        if device.get('memory_total') and 'G' in str(device['memory_total']):
-                            try:
-                                memory_gb = float(device['memory_total'].rstrip('G'))
-                            except (ValueError, AttributeError):
-                                pass
+                        memory_gb = self._parse_memory_gb(device.get('memory_total'))
                         
                         if memory_gb >= 8:
                             suggestions['database_candidates'].append({
@@ -257,12 +263,7 @@ class NetworkSiteMap:
             # Upgrade recommendations
             cpu_cores = device.get('cpu_cores') or 0
             if cpu_cores <= 2:
-                memory_gb = 0
-                if device.get('memory_total') and 'G' in str(device['memory_total']):
-                    try:
-                        memory_gb = float(device['memory_total'].rstrip('G'))
-                    except (ValueError, AttributeError):
-                        pass
+                memory_gb = self._parse_memory_gb(device.get('memory_total'))
                 
                 if memory_gb <= 4:
                     suggestions['upgrade_recommendations'].append({

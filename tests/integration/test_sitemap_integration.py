@@ -594,8 +594,13 @@ class TestSitemapIntegration:
         if cpu_cores >= 4:
             # Should be suggested for load balancing if it has enough cores
             lb_candidates = [c["hostname"] for c in suggestions["load_balancer_candidates"]]
-            if device["memory_total"] and "G" in device["memory_total"]:
-                memory_gb = float(device["memory_total"].rstrip("G"))
+            if device["memory_total"] and ("G" in device["memory_total"] or "Gi" in device["memory_total"]):
+                memory_str = device["memory_total"]
+                # Handle both "G" and "Gi" suffixes
+                if memory_str.endswith("Gi"):
+                    memory_gb = float(memory_str.rstrip("Gi"))
+                else:
+                    memory_gb = float(memory_str.rstrip("G"))
                 if memory_gb >= 4:
                     assert "test-ubuntu" in lb_candidates
         

@@ -111,7 +111,8 @@ class TestSSHIntegration:
         assert "network" in system_data
         # CPU might not be available in container environments
         if "cpu" in system_data:
-            assert "model" in system_data["cpu"]
+            # CPU data should have at least cores or model info
+            assert "cores" in system_data["cpu"] or "model" in system_data["cpu"]
 
     @pytest.mark.asyncio
     async def test_force_update_key_scenario(self, clean_container):
