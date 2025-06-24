@@ -59,7 +59,7 @@ async def test_tools_list():
     assert "tools" in response["result"]
     
     tools = response["result"]["tools"]
-    assert len(tools) == 4  # hello_world, ssh_discover, setup_mcp_admin, verify_mcp_admin
+    assert len(tools) == 10  # Original 4 + 6 new sitemap tools
     
     # Check tool names and descriptions
     tool_names = [tool.get("description") for tool in tools]
@@ -67,6 +67,11 @@ async def test_tools_list():
     assert any("SSH" in desc for desc in tool_names)
     assert any("setup mcp_admin" in desc for desc in tool_names)
     assert any("Verify" in desc for desc in tool_names)
+    
+    # Check new sitemap tools are included
+    assert any("network site map" in desc for desc in tool_names)
+    assert any("topology" in desc for desc in tool_names)
+    assert any("deployment" in desc for desc in tool_names)
 
 
 @pytest.mark.asyncio

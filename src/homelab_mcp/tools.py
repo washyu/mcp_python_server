@@ -3,6 +3,7 @@
 from typing import Any, Dict
 
 from .ssh_tools import ssh_discover_system, setup_remote_mcp_admin, verify_mcp_admin_access
+from .sitemap import NetworkSiteMap, discover_and_store, bulk_discover_and_store
 
 
 # Tool registry
@@ -93,6 +94,102 @@ TOOLS = {
             },
             "required": ["hostname"]
         }
+    },
+    "discover_and_map": {
+        "description": "Discover a device via SSH and store it in the network site map database",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address"
+                },
+                "username": {
+                    "type": "string", 
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "key_path": {
+                    "type": "string",
+                    "description": "Path to SSH private key"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["hostname", "username"]
+        }
+    },
+    "bulk_discover_and_map": {
+        "description": "Discover multiple devices via SSH and store them in the network site map database",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "description": "Array of target device configurations",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "hostname": {"type": "string"},
+                            "username": {"type": "string"},
+                            "password": {"type": "string"},
+                            "key_path": {"type": "string"},
+                            "port": {"type": "integer", "default": 22}
+                        },
+                        "required": ["hostname", "username"]
+                    }
+                }
+            },
+            "required": ["targets"]
+        }
+    },
+    "get_network_sitemap": {
+        "description": "Get all discovered devices from the network site map database",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    "analyze_network_topology": {
+        "description": "Analyze the network topology and provide insights about the discovered devices",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    "suggest_deployments": {
+        "description": "Suggest optimal deployment locations based on current network topology and device capabilities",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    "get_device_changes": {
+        "description": "Get change history for a specific device",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "integer",
+                    "description": "Database ID of the device"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of changes to return (default: 10)",
+                    "default": 10
+                }
+            },
+            "required": ["device_id"]
+        }
     }
 }
 
@@ -104,6 +201,9 @@ def get_available_tools() -> Dict[str, Dict[str, Any]]:
 
 async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a tool by name with the given arguments."""
+    # Initialize sitemap instance
+    sitemap = NetworkSiteMap()
+    
     if tool_name == "hello_world":
         return {"content": [{"type": "text", "text": "Hello from the Homelab MCP server!"}]}
     
@@ -119,5 +219,53 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         result = await verify_mcp_admin_access(**arguments)
         return {"content": [{"type": "text", "text": result}]}
     
+    elif tool_name == "discover_and_map":
+        result = await discover_and_store(sitemap, **arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "bulk_discover_and_map":
+        result = await bulk_discover_and_store(sitemap, arguments["targets"])
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "get_network_sitemap":
+        import json
+        devices = sitemap.get_all_devices()
+        result = json.dumps({
+            "status": "success",
+            "total_devices": len(devices),
+            "devices": devices
+        }, indent=2)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "analyze_network_topology":
+        import json
+        analysis = sitemap.analyze_network_topology()
+        result = json.dumps({
+            "status": "success",
+            "analysis": analysis
+        }, indent=2)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "suggest_deployments":
+        import json
+        suggestions = sitemap.suggest_deployments()
+        result = json.dumps({
+            "status": "success",
+            "suggestions": suggestions
+        }, indent=2)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "get_device_changes":
+        import json
+        changes = sitemap.get_device_changes(
+            arguments["device_id"],
+            arguments.get("limit", 10)
+        )
+        result = json.dumps({
+            "status": "success",
+            "device_id": arguments["device_id"],
+            "changes": changes
+        }, indent=2)
+        return {"content": [{"type": "text", "text": result}]}
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

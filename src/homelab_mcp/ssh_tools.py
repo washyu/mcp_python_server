@@ -302,14 +302,53 @@ async def ssh_discover_system(
             if hostname_result.exit_status == 0 and hostname_result.stdout:
                 actual_hostname = cast(str, hostname_result.stdout).strip()
             
-            # Get CPU information
-            cpu_result = await conn.run('cat /proc/cpuinfo | grep "model name" | head -1 && nproc', check=False)
-            if cpu_result.exit_status == 0 and cpu_result.stdout:
-                lines = cast(str, cpu_result.stdout).strip().split('\n')
-                if len(lines) >= 2:
-                    cpu_model = lines[0].split(':', 1)[1].strip() if ':' in lines[0] else "Unknown"
-                    cpu_cores = lines[1].strip()
-                    system_info['cpu'] = {'model': cpu_model, 'cores': cpu_cores}
+            # Get CPU information (supports both x86 and ARM/Pi systems)
+            cpu_cores_result = await conn.run('nproc', check=False)
+            cpu_cores = None
+            if cpu_cores_result.exit_status == 0 and cpu_cores_result.stdout:
+                cpu_cores = cast(str, cpu_cores_result.stdout).strip()
+            
+            # Try different methods to get CPU model
+            cpu_model = None
+            
+            # Method 1: Try x86 "model name"
+            cpu_model_result = await conn.run('cat /proc/cpuinfo | grep "model name" | head -1', check=False)
+            if cpu_model_result.exit_status == 0 and cpu_model_result.stdout and cpu_model_result.stdout.strip():
+                model_line = cast(str, cpu_model_result.stdout).strip()
+                if ':' in model_line:
+                    cpu_model = model_line.split(':', 1)[1].strip()
+            
+            # Method 2: Try ARM/Pi "Model" field
+            if not cpu_model:
+                pi_model_result = await conn.run('cat /proc/cpuinfo | grep -E "^Model" | head -1', check=False)
+                if pi_model_result.exit_status == 0 and pi_model_result.stdout and pi_model_result.stdout.strip():
+                    model_line = cast(str, pi_model_result.stdout).strip()
+                    if ':' in model_line:
+                        cpu_model = model_line.split(':', 1)[1].strip()
+            
+            # Method 3: Try lscpu for CPU name (works on both x86 and ARM)
+            if not cpu_model:
+                lscpu_result = await conn.run('lscpu | grep "Model name" | head -1', check=False)
+                if lscpu_result.exit_status == 0 and lscpu_result.stdout and lscpu_result.stdout.strip():
+                    model_line = cast(str, lscpu_result.stdout).strip()
+                    if ':' in model_line:
+                        cpu_model = model_line.split(':', 1)[1].strip()
+            
+            # Method 4: Fallback to Hardware field for older ARM systems
+            if not cpu_model:
+                hw_result = await conn.run('cat /proc/cpuinfo | grep "Hardware" | head -1', check=False)
+                if hw_result.exit_status == 0 and hw_result.stdout and hw_result.stdout.strip():
+                    hw_line = cast(str, hw_result.stdout).strip()
+                    if ':' in hw_line:
+                        cpu_model = hw_line.split(':', 1)[1].strip()
+            
+            # Store CPU info if we got anything
+            if cpu_model or cpu_cores:
+                system_info['cpu'] = {}
+                if cpu_model:
+                    system_info['cpu']['model'] = cpu_model
+                if cpu_cores:
+                    system_info['cpu']['cores'] = cpu_cores
             
             # Get memory information
             mem_result = await conn.run('free -h', check=False)
