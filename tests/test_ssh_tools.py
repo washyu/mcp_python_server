@@ -276,12 +276,18 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_open, mock_pub_
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
     
-    # Mock command results
+    # Mock command results - need to match the actual sequence in the function
     user_check = MagicMock()
     user_check.exit_status = 1  # User doesn't exist
     
+    cleanup_home = MagicMock()  # sudo rm -rf /home/mcp_admin
+    cleanup_home.exit_status = 0
+    
     create_user = MagicMock()
     create_user.exit_status = 0
+    
+    chown_home = MagicMock()  # sudo chown -R mcp_admin:mcp_admin /home/mcp_admin
+    chown_home.exit_status = 0
     
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
@@ -289,7 +295,13 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_open, mock_pub_
     key_check = MagicMock()
     key_check.exit_status = 1  # Key doesn't exist
     
-    mkdir_cmd = MagicMock()
+    mkdir_home = MagicMock()  # sudo mkdir -p /home/mcp_admin
+    mkdir_home.exit_status = 0
+    
+    chown_home2 = MagicMock()  # sudo chown mcp_admin:mcp_admin /home/mcp_admin
+    chown_home2.exit_status = 0
+    
+    mkdir_cmd = MagicMock()  # create .ssh directory
     mkdir_cmd.exit_status = 0
     
     add_key = MagicMock()
@@ -301,7 +313,7 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_open, mock_pub_
     test_conn = MagicMock()
     test_conn.exit_status = 0
     
-    mock_conn.run.side_effect = [user_check, create_user, sudo_group, key_check, mkdir_cmd, add_key, sudoers_setup, test_conn]
+    mock_conn.run.side_effect = [user_check, cleanup_home, create_user, chown_home, sudo_group, key_check, mkdir_home, chown_home2, mkdir_cmd, add_key, sudoers_setup, test_conn]
     
     # Setup context manager
     async def mock_context_mgr():
@@ -351,15 +363,27 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_open, mock_
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
     
-    # Mock command results
+    # Mock command results - for when user already exists
     user_check = MagicMock()
     user_check.exit_status = 0  # User exists
     
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
     
-    ssh_setup = MagicMock()
-    ssh_setup.exit_status = 0
+    key_check = MagicMock()
+    key_check.exit_status = 1  # Key doesn't exist
+    
+    mkdir_home = MagicMock()  # sudo mkdir -p /home/mcp_admin
+    mkdir_home.exit_status = 0
+    
+    chown_home = MagicMock()  # sudo chown mcp_admin:mcp_admin /home/mcp_admin
+    chown_home.exit_status = 0
+    
+    mkdir_cmd = MagicMock()  # create .ssh directory
+    mkdir_cmd.exit_status = 0
+    
+    add_key = MagicMock()
+    add_key.exit_status = 0
     
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
@@ -367,16 +391,7 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_open, mock_
     test_conn = MagicMock()
     test_conn.exit_status = 0
     
-    key_check = MagicMock()
-    key_check.exit_status = 1  # Key doesn't exist
-    
-    mkdir_cmd = MagicMock()
-    mkdir_cmd.exit_status = 0
-    
-    add_key = MagicMock()
-    add_key.exit_status = 0
-    
-    mock_conn.run.side_effect = [user_check, sudo_group, key_check, mkdir_cmd, add_key, sudoers_setup, test_conn]
+    mock_conn.run.side_effect = [user_check, sudo_group, key_check, mkdir_home, chown_home, mkdir_cmd, add_key, sudoers_setup, test_conn]
     
     # Setup context manager
     async def mock_context_mgr():
@@ -551,7 +566,7 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_open, 
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
     
-    # Mock command results
+    # Mock command results - for existing user with force update key
     user_check = MagicMock()
     user_check.exit_status = 0  # User exists
     
@@ -561,10 +576,16 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_open, 
     key_check = MagicMock()
     key_check.exit_status = 0  # Key exists (but different)
     
-    mkdir_cmd = MagicMock()
+    mkdir_home = MagicMock()  # sudo mkdir -p /home/mcp_admin
+    mkdir_home.exit_status = 0
+    
+    chown_home = MagicMock()  # sudo chown mcp_admin:mcp_admin /home/mcp_admin
+    chown_home.exit_status = 0
+    
+    mkdir_cmd = MagicMock()  # create .ssh directory
     mkdir_cmd.exit_status = 0
     
-    remove_old = MagicMock()
+    remove_old = MagicMock()  # Remove old key
     remove_old.exit_status = 0
     
     add_key = MagicMock()
@@ -576,7 +597,7 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_open, 
     test_conn = MagicMock()
     test_conn.exit_status = 0
     
-    mock_conn.run.side_effect = [user_check, sudo_group, key_check, mkdir_cmd, remove_old, add_key, sudoers_setup, test_conn]
+    mock_conn.run.side_effect = [user_check, sudo_group, key_check, mkdir_home, chown_home, mkdir_cmd, remove_old, add_key, sudoers_setup, test_conn]
     
     # Setup context manager
     async def mock_context_mgr():

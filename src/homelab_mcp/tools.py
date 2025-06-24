@@ -35,6 +35,11 @@ TOOLS = {
                 "key_path": {
                     "type": "string",
                     "description": "Path to SSH private key"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
                 }
             },
             "required": ["hostname", "username"]
@@ -61,6 +66,11 @@ TOOLS = {
                     "type": "boolean",
                     "description": "Force update SSH key even if mcp_admin already has keys (default: true)",
                     "default": True
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
                 }
             },
             "required": ["hostname", "username", "password"]
@@ -74,6 +84,11 @@ TOOLS = {
                 "hostname": {
                     "type": "string",
                     "description": "Hostname or IP address of the target system"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
                 }
             },
             "required": ["hostname"]

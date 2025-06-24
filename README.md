@@ -175,9 +175,19 @@ mcp_python_server/
 │       ├── tools.py       # Tool registry and execution
 │       └── ssh_tools.py   # SSH-based discovery tools
 ├── tests/
-│   ├── test_server.py     # Server tests
-│   ├── test_tools.py      # Tool tests
-│   └── test_ssh_tools.py  # SSH tool tests
+│   ├── integration/       # Integration tests (require Docker)
+│   │   ├── __init__.py
+│   │   ├── conftest.py    # Test fixtures and setup
+│   │   └── test_ssh_integration.py
+│   ├── test_server.py     # Server unit tests
+│   ├── test_tools.py      # Tool unit tests
+│   └── test_ssh_tools.py  # SSH tool unit tests
+├── docker/
+│   └── test-ubuntu/       # Docker setup for integration tests
+│       └── Dockerfile
+├── scripts/
+│   └── run-integration-tests.sh  # Integration test runner
+├── docker-compose.test.yml       # Test container orchestration
 ├── requirements.txt       # Production dependencies
 ├── requirements-dev.txt   # Development dependencies
 ├── pytest.ini            # Pytest configuration
@@ -186,15 +196,38 @@ mcp_python_server/
 
 ### Running Tests
 
+#### Unit Tests
 ```bash
-# Run all tests
-pytest
+# Run all unit tests (fast, no Docker required)
+pytest tests/ -m "not integration"
 
 # Run with coverage
-pytest --cov=src/homelab_mcp
+pytest tests/ -m "not integration" --cov=src/homelab_mcp
 
 # Run specific test file
 pytest tests/test_server.py
+```
+
+#### Integration Tests
+```bash
+# Prerequisites: Docker and docker-compose must be installed and running
+
+# Run integration tests (requires Docker)
+./scripts/run-integration-tests.sh
+
+# Or run manually
+pytest tests/integration/ -m integration -v
+
+# Run specific integration test
+pytest tests/integration/test_ssh_integration.py::TestSSHIntegration::test_full_mcp_admin_setup_workflow -v
+```
+
+#### All Tests
+```bash
+# Run all tests (unit + integration)
+pytest
+
+# Note: Integration tests will be skipped if Docker is not available
 ```
 
 ### Adding New Tools

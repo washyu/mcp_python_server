@@ -55,7 +55,8 @@ async def setup_remote_mcp_admin(
     hostname: str,
     username: str, 
     password: str,
-    force_update_key: bool = True
+    force_update_key: bool = True,
+    port: int = 22
 ) -> str:
     """SSH into remote system and setup mcp_admin user with admin permissions."""
     try:
@@ -73,6 +74,7 @@ async def setup_remote_mcp_admin(
         # Connect to remote system
         connect_kwargs = {
             "host": hostname,
+            "port": port,
             "username": username,
             "password": password,
             "known_hosts": None,
@@ -87,6 +89,9 @@ async def setup_remote_mcp_admin(
             user_exists = user_check.exit_status == 0
             
             if not user_exists:
+                # Clean up any leftover home directory before creating user
+                await conn.run('sudo rm -rf /home/mcp_admin', check=False)
+                
                 # Create mcp_admin user
                 create_user = await conn.run(
                     'sudo useradd -m -s /bin/bash -G sudo mcp_admin', 
@@ -96,6 +101,8 @@ async def setup_remote_mcp_admin(
                     setup_results['user_creation'] = f"Failed: {create_user.stderr}"
                 else:
                     setup_results['user_creation'] = "Success: mcp_admin user created"
+                    # Ensure proper ownership of home directory
+                    await conn.run('sudo chown -R mcp_admin:mcp_admin /home/mcp_admin', check=False)
             else:
                 setup_results['user_creation'] = "User already exists"
             
@@ -117,10 +124,16 @@ async def setup_remote_mcp_admin(
             if key_exists and not force_update_key:
                 setup_results['ssh_key'] = "SSH key already exists"
             else:
-                # Setup SSH directory
+                # Setup SSH directory (more robust approach)
+                # First ensure the home directory exists and has proper ownership
+                await conn.run('sudo mkdir -p /home/mcp_admin', check=False)
+                await conn.run('sudo chown mcp_admin:mcp_admin /home/mcp_admin', check=False)
+                
+                # Create .ssh directory as root, then change ownership
                 mkdir_cmd = await conn.run(
-                    'sudo -u mcp_admin mkdir -p /home/mcp_admin/.ssh && '
-                    'sudo -u mcp_admin chmod 700 /home/mcp_admin/.ssh',
+                    'sudo mkdir -p /home/mcp_admin/.ssh && '
+                    'sudo chown mcp_admin:mcp_admin /home/mcp_admin/.ssh && '
+                    'sudo chmod 700 /home/mcp_admin/.ssh',
                     check=False
                 )
                 
@@ -185,7 +198,7 @@ async def setup_remote_mcp_admin(
         }, indent=2)
 
 
-async def verify_mcp_admin_access(hostname: str) -> str:
+async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
     """Verify SSH key access to mcp_admin account on remote system."""
     try:
         key_path = get_mcp_ssh_key_path()
@@ -200,6 +213,7 @@ async def verify_mcp_admin_access(hostname: str) -> str:
         # Test SSH connection with key
         connect_kwargs = {
             "host": hostname,
+            "port": port,
             "username": "mcp_admin",
             "client_keys": [str(key_path)],
             "known_hosts": None,
@@ -251,13 +265,15 @@ async def ssh_discover_system(
     hostname: str, 
     username: str, 
     password: Optional[str] = None, 
-    key_path: Optional[str] = None
+    key_path: Optional[str] = None,
+    port: int = 22
 ) -> str:
     """SSH into a system and gather hardware/system information."""
     try:
         # Connect via SSH
         connect_kwargs = {
             "host": hostname,
+            "port": port,
             "username": username,
             "known_hosts": None,
             "connect_timeout": 10
