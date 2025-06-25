@@ -1,20 +1,41 @@
-# Homelab MCP Server
+# 🏠 Homelab MCP Server
 
-A Model Context Protocol (MCP) server for managing and monitoring homelab systems via SSH.
+**AI-Powered VM Infrastructure Management with Service Installation Framework**
 
-## Overview
+A Model Context Protocol (MCP) server that enables AI assistants to manage, deploy, and monitor homelab infrastructure through automated service installation and VM management.
 
-This MCP server provides tools for AI assistants to discover and monitor systems in your homelab environment. It follows the MCP specification for stdio-based communication.
+## 🚀 Quick Start
 
-## Features
+```bash
+# Install uv (ultra-fast Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-- **System Discovery**: SSH into systems to gather hardware and software information
-- **SSH Key Management**: Automatic SSH key generation for secure authentication
-- **Remote Setup**: Automatically configure remote systems with mcp_admin user
-- **Standardized Interface**: Follows the MCP protocol for tool interaction
-- **Extensible**: Easy to add new tools and capabilities
+# Clone and run (takes 3 seconds!)
+git clone https://github.com/washyu/mcp_python_server.git
+cd mcp_python_server
+uv sync && uv run python run_server.py
+```
 
-## Available Tools (23 Total)
+## ✨ Key Features
+
+### 🤖 **AI-Driven Service Installation**
+- **30 MCP Tools** for complete infrastructure lifecycle management
+- **Service Templates** for Jellyfin, K3s, TrueNAS, and more
+- **Automated Deployment** with requirement validation and health checking
+- **One-Command Installation**: *"Install Jellyfin on my homelab server"*
+
+### 🔧 **VM Infrastructure Management**
+- **SSH-based Discovery**: Gather hardware/software information from any system
+- **Automated User Setup**: Configure `mcp_admin` with passwordless access
+- **Container Operations**: Deploy, manage, and remove Docker/LXD containers
+- **Network Mapping**: Intelligent device discovery and topology analysis
+
+### ⚡ **Ultra-Fast Development**
+- **uv Package Manager**: 15x faster than pip with automatic Python management
+- **Reproducible Builds**: Lock files ensure consistent deployments
+- **Zero Configuration**: Dependencies and virtual environments handled automatically
+
+## 🛠 Available Tools (30 Total)
 
 ### SSH & Admin Tools (4)
 
