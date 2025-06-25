@@ -45,7 +45,13 @@ class HomelabMCPServer:
                 })
             
             elif method == "tools/list":
-                return self._success_response(request_id, {"tools": list(self.tools.values())})
+                # Add the name field to each tool
+                tools_list = []
+                for name, tool_def in self.tools.items():
+                    tool_with_name = tool_def.copy()
+                    tool_with_name["name"] = name
+                    tools_list.append(tool_with_name)
+                return self._success_response(request_id, {"tools": tools_list})
             
             elif method == "tools/call":
                 tool_name = params.get("name")
