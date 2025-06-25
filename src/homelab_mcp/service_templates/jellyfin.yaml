@@ -1,0 +1,166 @@
+name: "Jellyfin Media Server"
+description: "Free, open-source media server with hardware transcoding and no subscription fees"
+category: "media"
+priority: "high"
+version: "10.11.0"
+homepage: "https://jellyfin.org"
+
+# System requirements
+requirements:
+  ports: [8096, 8920]  # HTTP and HTTPS ports
+  memory_gb: 2         # Minimum 2GB RAM
+  disk_gb: 10          # At least 10GB for the application (excluding media storage)
+
+# Default configuration
+default_port: 8096
+default_config:
+  timezone: "UTC"
+  media_folders:
+    - "/opt/jellyfin/media/movies"
+    - "/opt/jellyfin/media/tv"
+    - "/opt/jellyfin/media/music"
+
+# Installation method and configuration
+installation:
+  method: "docker-compose"
+  docker_compose:
+    version: "3.8"
+    services:
+      jellyfin:
+        image: "jellyfin/jellyfin:latest"
+        container_name: "jellyfin"
+        restart: "unless-stopped"
+        environment:
+          - "PUID=1000"
+          - "PGID=1000"
+          - "TZ=UTC"
+        volumes:
+          - "/opt/jellyfin/config:/config"
+          - "/opt/jellyfin/cache:/cache"
+          - "/opt/jellyfin/media:/media:ro"
+        ports:
+          - "8096:8096"
+          - "8920:8920"  # HTTPS
+        devices:
+          # Hardware transcoding support
+          - "/dev/dri:/dev/dri"  # Intel GPU
+        networks:
+          - "jellyfin-network"
+    
+    networks:
+      jellyfin-network:
+        driver: bridge
+
+# Post-installation setup
+post_install:
+  instructions:
+    - "Access Jellyfin at http://{hostname}:8096"
+    - "Complete the setup wizard to create an admin account"
+    - "Add your media libraries by pointing to /media/movies, /media/tv, /media/music"
+    - "For hardware transcoding, ensure your GPU drivers are installed"
+    - "Consider setting up reverse proxy for external access"
+  
+  recommended_configs:
+    - name: "Hardware Transcoding"
+      description: "Enable GPU acceleration for video transcoding"
+      steps:
+        - "Install GPU drivers (Intel: intel-media-va-driver, NVIDIA: nvidia-docker2)"
+        - "In Jellyfin Admin > Playback, enable Hardware acceleration"
+        - "Select appropriate acceleration method (VA-API for Intel, NVENC for NVIDIA)"
+    
+    - name: "Media Organization"
+      description: "Organize media files for optimal Jellyfin experience"
+      steps:
+        - "Create subdirectories: /opt/jellyfin/media/{movies,tv,music}"
+        - "Use proper naming: Movies/Movie Name (Year)/Movie Name (Year).ext"
+        - "Use proper naming: TV/Show Name/Season 01/Show Name S01E01.ext"
+        - "Set proper permissions: sudo chown -R 1000:1000 /opt/jellyfin/media"
+
+# Health checks
+health_check:
+  endpoint: "http://localhost:8096/health"
+  expected_status: 200
+  timeout: 30
+
+# Common configuration options users might want to override
+configurable_options:
+  ports:
+    http_port: 8096
+    https_port: 8920
+  
+  paths:
+    config_dir: "/opt/jellyfin/config"
+    cache_dir: "/opt/jellyfin/cache"
+    media_dir: "/opt/jellyfin/media"
+  
+  environment:
+    timezone: "UTC"
+    user_id: 1000
+    group_id: 1000
+  
+  hardware_acceleration:
+    enable_intel_gpu: true
+    enable_nvidia_gpu: false
+    additional_devices: []
+
+# Backup recommendations
+backup:
+  critical_paths:
+    - "/opt/jellyfin/config"
+  
+  exclude_paths:
+    - "/opt/jellyfin/cache"
+    - "/opt/jellyfin/media"  # User's media files, backup separately
+  
+  backup_frequency: "weekly"
+  retention: "4 weeks"
+
+# Monitoring suggestions
+monitoring:
+  key_metrics:
+    - "Container health and uptime"
+    - "CPU usage during transcoding"
+    - "Disk I/O for media streaming"
+    - "Network bandwidth usage"
+  
+  log_locations:
+    - "/opt/jellyfin/config/log"
+  
+  common_issues:
+    - "High CPU usage: Check transcoding settings and hardware acceleration"
+    - "Slow loading: Check disk I/O and network connectivity"
+    - "Playback issues: Verify codec support and transcoding configuration"
+
+# Security considerations
+security:
+  recommendations:
+    - "Use reverse proxy with SSL termination for external access"
+    - "Enable two-factor authentication for admin accounts"
+    - "Regularly update Jellyfin container image"
+    - "Restrict network access if only used locally"
+    - "Use read-only bind mounts for media directories"
+  
+  firewall_rules:
+    - "Allow port 8096 from local network only"
+    - "If using HTTPS, allow port 8920 from local network only"
+
+# Troubleshooting
+troubleshooting:
+  common_problems:
+    - problem: "Container won't start"
+      solutions:
+        - "Check port conflicts: sudo netstat -tlnp | grep :8096"
+        - "Verify permissions: sudo chown -R 1000:1000 /opt/jellyfin"
+        - "Check logs: sudo docker logs jellyfin"
+    
+    - problem: "No hardware transcoding"
+      solutions:
+        - "Verify GPU drivers: lspci | grep VGA"
+        - "Check device access: ls -la /dev/dri"
+        - "Add user to video group: sudo usermod -aG video jellyfin"
+    
+    - problem: "Can't add media libraries"
+      solutions:
+        - "Check media directory exists: ls -la /opt/jellyfin/media"
+        - "Verify permissions: sudo chmod 755 /opt/jellyfin/media"
+        - "Ensure media files are accessible from container"
