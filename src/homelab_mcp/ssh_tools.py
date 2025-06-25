@@ -102,24 +102,6 @@ async def setup_remote_mcp_admin(
             else:
                 setup_results['sudo_access'] = f"Failed: {sudo_group.stderr}"
             
-            # Add mcp_admin to relevant service groups for container/VM management
-            groups_to_add = ['docker', 'lxd', 'libvirt', 'kvm']
-            added_groups = []
-            
-            for group in groups_to_add:
-                # Check if group exists
-                group_check = await conn.run(f'getent group {group}', check=False)
-                if group_check.exit_status == 0:
-                    # Add user to group
-                    add_group = await conn.run(f'sudo usermod -a -G {group} mcp_admin', check=False)
-                    if add_group.exit_status == 0:
-                        added_groups.append(group)
-            
-            if added_groups:
-                setup_results['service_groups'] = f"Success: Added to groups: {', '.join(added_groups)}"
-            else:
-                setup_results['service_groups'] = "No service groups found to add"
-            
             # Check if our key is already in authorized_keys
             key_check = await conn.run(
                 f'sudo grep -F "{public_key}" /home/mcp_admin/.ssh/authorized_keys 2>/dev/null',
@@ -563,25 +545,49 @@ async def update_mcp_admin_groups(
             
             results['current_groups'] = current_groups
             
-            # Add mcp_admin to relevant service groups
-            groups_to_add = ['docker', 'lxd', 'libvirt', 'kvm']
+            # Check which services are installed and add to relevant groups
+            service_checks = {
+                'docker': 'which docker',
+                'lxd': 'which lxc',
+                'libvirt': 'which virsh',
+                'kvm': 'test -e /dev/kvm'
+            }
+            
+            available_services = []
+            for service, check_cmd in service_checks.items():
+                service_check = await conn.run(check_cmd, check=False)
+                if service_check.exit_status == 0:
+                    available_services.append(service)
+            
+            results['installed_services'] = available_services
+            
+            # Add mcp_admin to groups for installed services
             added_groups = []
             failed_groups = []
+            skipped_groups = []
             
-            for group in groups_to_add:
+            for group in ['docker', 'lxd', 'libvirt', 'kvm']:
+                # Skip if service not installed
+                if group not in available_services:
+                    skipped_groups.append(f"{group} (service not installed)")
+                    continue
+                
                 # Check if group exists
                 group_check = await conn.run(f'getent group {group}', check=False)
-                if group_check.exit_status == 0:
-                    # Check if already in group
-                    if group in current_groups:
-                        continue
-                    
-                    # Add user to group
-                    add_group = await conn.run(f'sudo usermod -a -G {group} mcp_admin', check=False)
-                    if add_group.exit_status == 0:
-                        added_groups.append(group)
-                    else:
-                        failed_groups.append(f"{group}: {add_group.stderr}")
+                if group_check.exit_status != 0:
+                    skipped_groups.append(f"{group} (group doesn't exist)")
+                    continue
+                
+                # Check if already in group
+                if group in current_groups:
+                    continue
+                
+                # Add user to group
+                add_group = await conn.run(f'sudo usermod -a -G {group} mcp_admin', check=False)
+                if add_group.exit_status == 0:
+                    added_groups.append(group)
+                else:
+                    failed_groups.append(f"{group}: {add_group.stderr}")
             
             # Get updated groups
             updated_groups_result = await conn.run('groups mcp_admin', check=False)
@@ -597,6 +603,8 @@ async def update_mcp_admin_groups(
             results['added_groups'] = added_groups
             if failed_groups:
                 results['failed_groups'] = failed_groups
+            if skipped_groups:
+                results['skipped_groups'] = skipped_groups
             
             # Test Docker access if docker group was added
             if 'docker' in updated_groups:

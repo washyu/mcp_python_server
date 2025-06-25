@@ -648,7 +648,7 @@ TOOLS = {
         }
     },
     "update_mcp_admin_groups": {
-        "description": "Update mcp_admin group memberships to include service management groups",
+        "description": "Update mcp_admin group memberships to include groups for installed services (docker, lxd, libvirt, kvm)",
         "inputSchema": {
             "type": "object",
             "properties": {
