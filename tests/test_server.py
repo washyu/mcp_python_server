@@ -59,7 +59,7 @@ async def test_tools_list():
     assert "tools" in response["result"]
     
     tools = response["result"]["tools"]
-    assert len(tools) == 10  # Original 4 + 6 new sitemap tools
+    assert len(tools) == 23  # Original 4 + 6 sitemap tools + 7 CRUD tools + 6 VM tools
     
     # Check tool names and descriptions
     tool_names = [tool.get("description") for tool in tools]
