@@ -646,6 +646,32 @@ TOOLS = {
             },
             "required": ["hostname", "username", "command"]
         }
+    },
+    "update_mcp_admin_groups": {
+        "description": "Update mcp_admin group memberships to include service management groups",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the target system"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "Admin username to connect with (must have sudo access)"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "Password for the admin user"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["hostname", "username", "password"]
+        }
     }
 }
 
@@ -848,6 +874,11 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
     elif tool_name == "ssh_execute_command":
         from .ssh_tools import ssh_execute_command
         result = await ssh_execute_command(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "update_mcp_admin_groups":
+        from .ssh_tools import update_mcp_admin_groups
+        result = await update_mcp_admin_groups(**arguments)
         return {"content": [{"type": "text", "text": result}]}
     
     else:

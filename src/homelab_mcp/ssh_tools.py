@@ -1,80 +1,69 @@
-"""SSH-based tools for system discovery and management."""
+"""SSH tools for system discovery and management."""
 
 import asyncio
-import json
-import os
-import getpass
-from pathlib import Path
-from typing import Dict, Any, Optional, cast
 import asyncssh
+import json
+import socket
+from pathlib import Path
+from typing import Dict, List, Optional, Any, cast
+
+# Get the path for storing SSH keys
+SSH_KEY_DIR = Path.home() / ".ssh" / "mcp"
 
 
 def get_mcp_ssh_key_path() -> Path:
-    """Get the path to the MCP SSH key."""
-    home_dir = Path.home()
-    ssh_dir = home_dir / '.ssh'
-    return ssh_dir / 'mcp_admin_rsa'
-
-
-def get_mcp_public_key_path() -> Path:
-    """Get the path to the MCP SSH public key."""
-    return get_mcp_ssh_key_path().with_suffix('.pub')
+    """Get the path to the MCP SSH private key."""
+    return SSH_KEY_DIR / "mcp_admin_key"
 
 
 async def ensure_mcp_ssh_key() -> str:
-    """Ensure MCP has its own SSH key, generate if missing."""
+    """Ensure MCP SSH key exists, generate if not."""
     key_path = get_mcp_ssh_key_path()
-    pub_key_path = get_mcp_public_key_path()
+    pub_key_path = Path(str(key_path) + ".pub")
+    
+    # Create directory if it doesn't exist
+    SSH_KEY_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     
     # Check if key already exists
     if key_path.exists() and pub_key_path.exists():
         return str(key_path)
     
-    # Create .ssh directory if it doesn't exist
-    ssh_dir = key_path.parent
-    ssh_dir.mkdir(mode=0o700, exist_ok=True)
+    # Generate new SSH key pair
+    key = asyncssh.generate_private_key('ssh-rsa', key_size=2048, 
+                                       comment='mcp_admin@homelab')
     
-    # Generate SSH key pair
-    private_key = asyncssh.generate_private_key('ssh-rsa', key_size=2048)
-    public_key = private_key.export_public_key()
-    
-    # Write private key
-    with open(key_path, 'wb') as f:
-        f.write(private_key.export_private_key())
+    # Save private key
+    key_path.write_bytes(key.export_private_key())
     key_path.chmod(0o600)
     
-    # Write public key with mcp_admin comment
-    with open(pub_key_path, 'w') as f:
-        f.write(f"{public_key.decode()} mcp_admin@{os.uname().nodename}\n")
+    # Save public key
+    public_key = key.export_public_key().decode('utf-8')
+    pub_key_path.write_text(public_key)
     pub_key_path.chmod(0o644)
     
     return str(key_path)
 
 
 async def setup_remote_mcp_admin(
-    hostname: str,
+    hostname: str, 
     username: str, 
-    password: str,
+    password: str, 
     force_update_key: bool = True,
     port: int = 22
 ) -> str:
-    """SSH into remote system and setup mcp_admin user with admin permissions."""
+    """SSH into a remote system and setup mcp_admin user with SSH key access."""
+    # First ensure we have a key
+    key_path = await ensure_mcp_ssh_key()
+    pub_key_path = Path(key_path + ".pub")
+    
+    # Read public key
+    public_key = pub_key_path.read_text().strip()
+    
     try:
-        # Ensure we have our SSH key
-        key_path = await ensure_mcp_ssh_key()
-        pub_key_path = get_mcp_public_key_path()
-        
-        if not pub_key_path.exists():
-            raise ValueError("MCP public key not found")
-        
-        # Read our public key
-        with open(pub_key_path, 'r') as f:
-            public_key = f.read().strip()
-        
-        # Connect to remote system
+        # Connect with admin credentials
         connect_kwargs = {
             "host": hostname,
-            "port": port,
+            "port": port, 
             "username": username,
             "password": password,
             "known_hosts": None,
@@ -112,6 +101,24 @@ async def setup_remote_mcp_admin(
                 setup_results['sudo_access'] = "Success: Added to sudo group"
             else:
                 setup_results['sudo_access'] = f"Failed: {sudo_group.stderr}"
+            
+            # Add mcp_admin to relevant service groups for container/VM management
+            groups_to_add = ['docker', 'lxd', 'libvirt', 'kvm']
+            added_groups = []
+            
+            for group in groups_to_add:
+                # Check if group exists
+                group_check = await conn.run(f'getent group {group}', check=False)
+                if group_check.exit_status == 0:
+                    # Add user to group
+                    add_group = await conn.run(f'sudo usermod -a -G {group} mcp_admin', check=False)
+                    if add_group.exit_status == 0:
+                        added_groups.append(group)
+            
+            if added_groups:
+                setup_results['service_groups'] = f"Success: Added to groups: {', '.join(added_groups)}"
+            else:
+                setup_results['service_groups'] = "No service groups found to add"
             
             # Check if our key is already in authorized_keys
             key_check = await conn.run(
@@ -236,6 +243,20 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
             if hostname_result.exit_status == 0 and hostname_result.stdout:
                 remote_hostname = cast(str, hostname_result.stdout).strip()
             
+            # Check group memberships
+            groups_result = await conn.run('groups', check=False)
+            user_groups = []
+            if groups_result.exit_status == 0 and groups_result.stdout:
+                groups_output = cast(str, groups_result.stdout).strip()
+                # Parse groups output (format: "mcp_admin : mcp_admin sudo docker ...")
+                if ':' in groups_output:
+                    user_groups = groups_output.split(':', 1)[1].strip().split()
+                else:
+                    user_groups = groups_output.split()
+            
+            # Check which service groups the user belongs to
+            service_groups = [g for g in user_groups if g in ['docker', 'lxd', 'libvirt', 'kvm']]
+            
             return json.dumps({
                 "status": "success",
                 "hostname": remote_hostname,
@@ -243,7 +264,9 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
                 "mcp_admin": {
                     "ssh_access": "Success: Connected with SSH key",
                     "sudo_access": "Success: Passwordless sudo working" if sudo_access else "Failed: No sudo access",
-                    "username": cast(str, whoami_result.stdout).strip() if whoami_result.stdout else "unknown"
+                    "username": cast(str, whoami_result.stdout).strip() if whoami_result.stdout else "unknown",
+                    "groups": user_groups,
+                    "service_groups": service_groups
                 }
             }, indent=2)
         
@@ -298,105 +321,69 @@ async def ssh_discover_system(
             
             # Get actual hostname from the remote system
             hostname_result = await conn.run('hostname', check=False)
-            actual_hostname = hostname
+            actual_hostname = hostname  # Default to the IP/hostname we connected with
             if hostname_result.exit_status == 0 and hostname_result.stdout:
                 actual_hostname = cast(str, hostname_result.stdout).strip()
             
-            # Get CPU information (supports both x86 and ARM/Pi systems)
-            cpu_cores_result = await conn.run('nproc', check=False)
-            cpu_cores = None
-            if cpu_cores_result.exit_status == 0 and cpu_cores_result.stdout:
-                cpu_cores = cast(str, cpu_cores_result.stdout).strip()
+            # Get CPU info
+            cpu_info = {}
+            cpu_result = await conn.run('nproc', check=False)
+            if cpu_result.exit_status == 0 and cpu_result.stdout:
+                cpu_info['count'] = int(cast(str, cpu_result.stdout).strip())
             
-            # Try different methods to get CPU model
-            cpu_model = None
-            
-            # Method 1: Try x86 "model name"
-            cpu_model_result = await conn.run('cat /proc/cpuinfo | grep "model name" | head -1', check=False)
-            if cpu_model_result.exit_status == 0 and cpu_model_result.stdout and cpu_model_result.stdout.strip():
+            cpu_model_result = await conn.run('grep "model name" /proc/cpuinfo | head -1', check=False)
+            if cpu_model_result.exit_status == 0 and cpu_model_result.stdout:
                 model_line = cast(str, cpu_model_result.stdout).strip()
                 if ':' in model_line:
-                    cpu_model = model_line.split(':', 1)[1].strip()
+                    cpu_info['model'] = model_line.split(':', 1)[1].strip()
             
-            # Method 2: Try ARM/Pi "Model" field
-            if not cpu_model:
-                pi_model_result = await conn.run('cat /proc/cpuinfo | grep -E "^Model" | head -1', check=False)
-                if pi_model_result.exit_status == 0 and pi_model_result.stdout and pi_model_result.stdout.strip():
-                    model_line = cast(str, pi_model_result.stdout).strip()
-                    if ':' in model_line:
-                        cpu_model = model_line.split(':', 1)[1].strip()
+            if cpu_info:
+                system_info['cpu'] = cpu_info
             
-            # Method 3: Try lscpu for CPU name (works on both x86 and ARM)
-            if not cpu_model:
-                lscpu_result = await conn.run('lscpu | grep "Model name" | head -1', check=False)
-                if lscpu_result.exit_status == 0 and lscpu_result.stdout and lscpu_result.stdout.strip():
-                    model_line = cast(str, lscpu_result.stdout).strip()
-                    if ':' in model_line:
-                        cpu_model = model_line.split(':', 1)[1].strip()
-            
-            # Method 4: Fallback to Hardware field for older ARM systems
-            if not cpu_model:
-                hw_result = await conn.run('cat /proc/cpuinfo | grep "Hardware" | head -1', check=False)
-                if hw_result.exit_status == 0 and hw_result.stdout and hw_result.stdout.strip():
-                    hw_line = cast(str, hw_result.stdout).strip()
-                    if ':' in hw_line:
-                        cpu_model = hw_line.split(':', 1)[1].strip()
-            
-            # Store CPU info if we got anything
-            if cpu_model or cpu_cores:
-                system_info['cpu'] = {}
-                if cpu_model:
-                    system_info['cpu']['model'] = cpu_model
-                if cpu_cores:
-                    system_info['cpu']['cores'] = cpu_cores
-            
-            # Get memory information
-            mem_result = await conn.run('free -h', check=False)
+            # Get memory info
+            mem_result = await conn.run('free -b', check=False)
             if mem_result.exit_status == 0 and mem_result.stdout:
-                mem_lines = cast(str, mem_result.stdout).strip().split('\n')
-                if len(mem_lines) > 1:
-                    # Parse the memory line (second line after header)
-                    mem_data = mem_lines[1].split()
-                    if len(mem_data) >= 7:
-                        system_info['memory'] = {
-                            'total': mem_data[1],
-                            'used': mem_data[2],
-                            'free': mem_data[3],
-                            'available': mem_data[6]
-                        }
+                lines = cast(str, mem_result.stdout).strip().split('\n')
+                for line in lines:
+                    if line.startswith('Mem:'):
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            system_info['memory'] = {
+                                'total': int(parts[1]),
+                                'used': int(parts[2])
+                            }
+                            break
             
-            # Get disk information  
-            disk_result = await conn.run('df -h /', check=False)
+            # Get disk usage
+            disk_result = await conn.run('df -B1 /', check=False)
             if disk_result.exit_status == 0 and disk_result.stdout:
-                disk_lines = cast(str, disk_result.stdout).strip().split('\n')
-                if len(disk_lines) > 1:
-                    # Parse the disk line (second line after header)
-                    disk_data = disk_lines[1].split()
-                    if len(disk_data) >= 6:
+                lines = cast(str, disk_result.stdout).strip().split('\n')
+                if len(lines) > 1:
+                    # Skip header, get data line
+                    parts = lines[1].split()
+                    if len(parts) >= 4:
                         system_info['disk'] = {
-                            'filesystem': disk_data[0],
-                            'size': disk_data[1],
-                            'used': disk_data[2],
-                            'available': disk_data[3],
-                            'use_percent': disk_data[4],
-                            'mount': disk_data[5]
+                            'total': int(parts[1]),
+                            'used': int(parts[2]),
+                            'available': int(parts[3])
                         }
             
             # Get network interfaces
-            net_result = await conn.run('ip -j addr show', check=False)
-            if net_result.exit_status == 0 and net_result.stdout:
+            network_info = []
+            # Try modern ip command first
+            ip_result = await conn.run('ip -j addr show 2>/dev/null', check=False)
+            if ip_result.exit_status == 0 and ip_result.stdout:
                 try:
-                    interfaces = json.loads(cast(str, net_result.stdout))
-                    network_info = []
+                    interfaces = json.loads(cast(str, ip_result.stdout))
                     for iface in interfaces:
-                        if iface.get('ifname') != 'lo':  # Skip loopback
+                        if iface.get('ifname') and iface['ifname'] != 'lo':
                             iface_info = {
-                                'name': iface.get('ifname'),
-                                'state': iface.get('operstate'),
+                                'name': iface['ifname'],
+                                'state': iface.get('operstate', 'unknown'),
                                 'addresses': []
                             }
                             for addr_info in iface.get('addr_info', []):
-                                if addr_info.get('family') == 'inet':
+                                if addr_info.get('family') in ['inet', 'inet6']:
                                     iface_info['addresses'].append(addr_info.get('local'))
                             if iface_info['addresses']:
                                 network_info.append(iface_info)
@@ -525,6 +512,107 @@ async def ssh_execute_command(
             "hostname": hostname,
             "error": "SSH connection timeout"
         }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "hostname": hostname,
+            "error": str(e)
+        }, indent=2)
+
+
+async def update_mcp_admin_groups(
+    hostname: str,
+    username: str,
+    password: str,
+    port: int = 22
+) -> str:
+    """Update mcp_admin group memberships to include service management groups."""
+    try:
+        # Connect via SSH with admin credentials
+        connect_kwargs = {
+            "host": hostname,
+            "port": port,
+            "username": username,
+            "password": password,
+            "known_hosts": None,
+            "connect_timeout": 10
+        }
+        
+        async with await asyncssh.connect(**connect_kwargs) as conn:
+            results = {}
+            
+            # Check if mcp_admin user exists
+            user_check = await conn.run('id mcp_admin', check=False)
+            if user_check.exit_status != 0:
+                return json.dumps({
+                    "status": "error",
+                    "hostname": hostname,
+                    "error": "mcp_admin user does not exist. Run setup_mcp_admin first."
+                }, indent=2)
+            
+            # Get current groups
+            current_groups_result = await conn.run('groups mcp_admin', check=False)
+            current_groups = []
+            if current_groups_result.exit_status == 0 and current_groups_result.stdout:
+                groups_output = cast(str, current_groups_result.stdout).strip()
+                # Parse groups output (format: "mcp_admin : mcp_admin sudo docker ...")
+                if ':' in groups_output:
+                    current_groups = groups_output.split(':', 1)[1].strip().split()
+                else:
+                    current_groups = groups_output.split()
+            
+            results['current_groups'] = current_groups
+            
+            # Add mcp_admin to relevant service groups
+            groups_to_add = ['docker', 'lxd', 'libvirt', 'kvm']
+            added_groups = []
+            failed_groups = []
+            
+            for group in groups_to_add:
+                # Check if group exists
+                group_check = await conn.run(f'getent group {group}', check=False)
+                if group_check.exit_status == 0:
+                    # Check if already in group
+                    if group in current_groups:
+                        continue
+                    
+                    # Add user to group
+                    add_group = await conn.run(f'sudo usermod -a -G {group} mcp_admin', check=False)
+                    if add_group.exit_status == 0:
+                        added_groups.append(group)
+                    else:
+                        failed_groups.append(f"{group}: {add_group.stderr}")
+            
+            # Get updated groups
+            updated_groups_result = await conn.run('groups mcp_admin', check=False)
+            updated_groups = []
+            if updated_groups_result.exit_status == 0 and updated_groups_result.stdout:
+                groups_output = cast(str, updated_groups_result.stdout).strip()
+                if ':' in groups_output:
+                    updated_groups = groups_output.split(':', 1)[1].strip().split()
+                else:
+                    updated_groups = groups_output.split()
+            
+            results['updated_groups'] = updated_groups
+            results['added_groups'] = added_groups
+            if failed_groups:
+                results['failed_groups'] = failed_groups
+            
+            # Test Docker access if docker group was added
+            if 'docker' in updated_groups:
+                docker_test = await conn.run('sudo -u mcp_admin docker ps', check=False)
+                if docker_test.exit_status == 0:
+                    results['docker_access'] = "Success: mcp_admin can access Docker"
+                else:
+                    results['docker_access'] = "Failed: Docker access test failed (may need to logout/login)"
+            
+            return json.dumps({
+                "status": "success",
+                "hostname": hostname,
+                "results": results,
+                "note": "User may need to logout and login again for group changes to take effect"
+            }, indent=2)
+            
     except Exception as e:
         return json.dumps({
             "status": "error",
