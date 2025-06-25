@@ -14,12 +14,14 @@ This MCP server provides tools for AI assistants to discover and monitor systems
 - **Standardized Interface**: Follows the MCP protocol for tool interaction
 - **Extensible**: Easy to add new tools and capabilities
 
-## Available Tools
+## Available Tools (23 Total)
 
-### `hello_world`
+### SSH & Admin Tools (4)
+
+#### `hello_world`
 A simple test tool that returns a greeting message.
 
-### `ssh_discover`
+#### `ssh_discover`
 SSH into a remote system and gather comprehensive system information including:
 - CPU details (model, cores)
 - Memory usage
@@ -30,7 +32,7 @@ SSH into a remote system and gather comprehensive system information including:
 
 **Note**: When using username `mcp_admin`, the tool automatically uses the MCP's SSH key if available. No password is required after running `setup_mcp_admin` on the target system.
 
-### `setup_mcp_admin`
+#### `setup_mcp_admin`
 SSH into a remote system using admin credentials and set up the `mcp_admin` user with:
 - User creation (if not exists)
 - Sudo group membership
@@ -43,11 +45,114 @@ Parameters:
 - `password`: Admin password
 - `force_update_key` (optional, default: true): Force update SSH key even if mcp_admin already has other keys
 
-### `verify_mcp_admin`
+#### `verify_mcp_admin`
 Verify SSH key access to the `mcp_admin` account on a remote system:
 - Tests SSH key authentication
 - Verifies sudo privileges
 - Returns connection status
+
+### Network Discovery Tools (6)
+
+#### `discover_and_map`
+Discover a device via SSH and store it in the network site map database.
+
+#### `bulk_discover_and_map`
+Discover multiple devices via SSH and store them in the network site map database.
+
+#### `get_network_sitemap`
+Get all discovered devices from the network site map database.
+
+#### `analyze_network_topology`
+Analyze the network topology and provide insights about the discovered devices.
+
+#### `suggest_deployments`
+Suggest optimal deployment locations based on current network topology and device capabilities.
+
+#### `get_device_changes`
+Get change history for a specific device.
+
+### Infrastructure CRUD Tools (7)
+
+#### `deploy_infrastructure`
+Deploy new infrastructure based on AI recommendations or user specifications:
+- Deploy Docker containers, LXD containers, or systemd services
+- Configure networking, storage, and environment variables
+- Validate deployment plans before execution
+
+#### `update_device_config`
+Update configuration of an existing device:
+- Modify service configurations
+- Update network settings
+- Change security configurations
+- Adjust resource allocations
+
+#### `decommission_device`
+Safely remove a device from the network infrastructure:
+- Analyze dependencies and critical services
+- Execute migration plans to move services
+- Graceful shutdown and removal
+
+#### `scale_services`
+Scale services up or down based on resource analysis:
+- Horizontal scaling of containers/VMs
+- Resource allocation adjustments
+- Load balancing configuration
+
+#### `validate_infrastructure_changes`
+Validate infrastructure changes before applying them:
+- Basic, comprehensive, and simulation validation levels
+- Dependency checking
+- Risk assessment
+
+#### `create_infrastructure_backup`
+Create a backup of current infrastructure state:
+- Full or partial backups
+- Device-specific backups
+- Configuration and data backup options
+
+#### `rollback_infrastructure_changes`
+Rollback recent infrastructure changes:
+- Restore from backups
+- Selective rollback capabilities
+- Validation before rollback
+
+### VM Management Tools (6)
+
+#### `deploy_vm`
+Deploy a new VM/container on a specific device:
+- Support for Docker containers and LXD VMs
+- Configurable images, ports, volumes, environment variables
+- Platform-agnostic deployment
+
+#### `control_vm`
+Control VM state (start, stop, restart):
+- Manage VM lifecycle
+- Support for both Docker and LXD platforms
+- Real-time status updates
+
+#### `get_vm_status`
+Get detailed status of a specific VM:
+- Container/VM health information
+- Resource usage statistics
+- Network and storage details
+
+#### `list_vms`
+List all VMs/containers on a device:
+- Cross-platform inventory
+- Status and configuration overview
+- Multi-device support
+
+#### `get_vm_logs`
+Get logs from a specific VM/container:
+- Configurable log line limits
+- Support for Docker and LXD logs
+- Real-time log streaming
+
+#### `remove_vm`
+Remove a VM/container from a device:
+- Graceful or forced removal
+- Data preservation options
+- Cleanup of associated resources
 
 ## Installation
 
@@ -117,11 +222,29 @@ echo '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ssh_discov
 
 ### Integration with AI Assistants
 
-This server is designed to work with AI assistants that support the Model Context Protocol. Configure your assistant to run:
+This server is designed to work with AI assistants that support the Model Context Protocol.
 
+**🚀 For detailed Claude setup instructions, see [CLAUDE_SETUP.md](CLAUDE_SETUP.md)**
+
+Basic configuration for Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "homelab": {
+      "command": "python3",
+      "args": ["/path/to/your/mcp_python_server/run_server.py"],
+      "env": {
+        "PYTHONPATH": "/path/to/your/mcp_python_server/src"
+      }
+    }
+  }
+}
 ```
-python /path/to/run_server.py
-```
+
+Place this in:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
 
 ### Typical Workflow
 
