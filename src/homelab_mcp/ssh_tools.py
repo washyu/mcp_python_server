@@ -448,3 +448,86 @@ async def ssh_discover_system(
             "connection_ip": hostname,
             "error": str(e)
         }, indent=2)
+
+
+async def ssh_execute_command(
+    hostname: str,
+    username: str,
+    command: str,
+    password: Optional[str] = None,
+    sudo: bool = False,
+    port: int = 22,
+    **kwargs
+) -> str:
+    """Execute a command on a remote system via SSH."""
+    ssh_key_path = None
+    client_keys = []
+    
+    # Use MCP admin key if username is mcp_admin
+    if username == 'mcp_admin':
+        mcp_key_path = await ensure_mcp_ssh_key()
+        if mcp_key_path:
+            client_keys = [mcp_key_path]
+    
+    # Prepare connection options
+    connect_kwargs = {
+        'host': hostname,
+        'port': port,
+        'username': username,
+        'known_hosts': None
+    }
+    
+    if client_keys:
+        connect_kwargs['client_keys'] = client_keys
+    
+    if password:
+        connect_kwargs['password'] = password
+    
+    try:
+        async with asyncssh.connect(**connect_kwargs) as conn:
+            # Prepare the command with sudo if requested
+            if sudo:
+                if username == 'mcp_admin':
+                    # mcp_admin has passwordless sudo
+                    full_command = f"sudo {command}"
+                else:
+                    # Other users might need password for sudo
+                    full_command = f"echo '{password}' | sudo -S {command}" if password else f"sudo {command}"
+            else:
+                full_command = command
+            
+            # Execute the command
+            result = await conn.run(full_command, check=False)
+            
+            output = []
+            if result.stdout:
+                output.append(f"Output:\n{result.stdout.strip()}")
+            if result.stderr:
+                output.append(f"Error:\n{result.stderr.strip()}")
+            
+            return json.dumps({
+                "status": "success",
+                "hostname": hostname,
+                "command": command,
+                "exit_code": result.exit_status,
+                "output": "\n\n".join(output) if output else "Command executed successfully (no output)"
+            }, indent=2)
+            
+    except asyncssh.misc.PermissionDenied:
+        return json.dumps({
+            "status": "error",
+            "hostname": hostname,
+            "error": "SSH authentication failed"
+        }, indent=2)
+    except asyncio.TimeoutError:
+        return json.dumps({
+            "status": "error",
+            "hostname": hostname,
+            "error": "SSH connection timeout"
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "hostname": hostname,
+            "error": str(e)
+        }, indent=2)

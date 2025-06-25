@@ -611,6 +611,41 @@ TOOLS = {
             },
             "required": ["device_id", "platform", "vm_name"]
         }
+    },
+    "ssh_execute_command": {
+        "description": "Execute a command on a remote system via SSH",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "Command to execute on the remote system"
+                },
+                "sudo": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Execute command with sudo privileges"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["hostname", "username", "command"]
+        }
     }
 }
 
@@ -808,6 +843,11 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
             vm_name=arguments["vm_name"],
             force=arguments.get("force", False)
         )
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "ssh_execute_command":
+        from .ssh_tools import ssh_execute_command
+        result = await ssh_execute_command(**arguments)
         return {"content": [{"type": "text", "text": result}]}
     
     else:
