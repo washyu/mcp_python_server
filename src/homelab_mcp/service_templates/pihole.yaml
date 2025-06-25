@@ -1,0 +1,316 @@
+name: "Pi-hole Network-wide Ad Blocker"
+description: "DNS sinkhole that blocks ads and trackers for your entire network, perfect for travel hotspots"
+category: "network_security"
+priority: "high"
+version: "2024.07.0"
+homepage: "https://pi-hole.net"
+
+# System requirements
+requirements:
+  ports: [80, 53, 443, 67]  # Web admin, DNS, HTTPS, DHCP (optional)
+  memory_gb: 1              # Very lightweight - 1GB is plenty
+  disk_gb: 2                # Minimal storage needed
+  cpu_cores: 1              # Single core sufficient
+
+# Default configuration
+default_port: 80
+default_config:
+  timezone: "UTC"
+  dns_servers: ["1.1.1.1", "1.0.0.1"]  # Cloudflare DNS
+  interface: "eth0"
+  dhcp_enabled: false  # Set to true for hotspot mode
+
+# Installation method
+installation:
+  method: "docker-compose"
+  docker_compose:
+    version: "3.8"
+    services:
+      pihole:
+        container_name: "pihole"
+        image: "pihole/pihole:latest"
+        restart: "unless-stopped"
+        ports:
+          - "53:53/tcp"
+          - "53:53/udp"
+          - "80:80/tcp"
+          - "443:443/tcp"
+        environment:
+          - "TZ=UTC"
+          - "WEBPASSWORD=changeme123"  # Change this!
+          - "PIHOLE_DNS_=1.1.1.1;1.0.0.1"
+          - "DNSMASQ_LISTENING=all"
+          - "WEB_PORT=80"
+        volumes:
+          - "/opt/pihole/etc-pihole:/etc/pihole"
+          - "/opt/pihole/etc-dnsmasq.d:/etc/dnsmasq.d"
+        dns:
+          - "127.0.0.1"
+          - "1.1.1.1"
+        cap_add:
+          - "NET_ADMIN"
+        networks:
+          - "pihole-network"
+    
+    networks:
+      pihole-network:
+        driver: bridge
+
+# Configuration options for different use cases
+configurable_options:
+  hotspot_mode:
+    description: "Configuration for travel hotspot setup"
+    dhcp_enabled: true
+    dhcp_range: "192.168.4.20,192.168.4.254"
+    dhcp_gateway: "192.168.4.1"
+    interface: "wlan0"
+    
+  home_network:
+    description: "Standard home network DNS filtering"
+    dhcp_enabled: false
+    dns_only: true
+    upstream_dns: ["1.1.1.1", "1.0.0.1"]
+    
+  enterprise_mode:
+    description: "Enhanced blocking with additional lists"
+    enable_additional_blocklists: true
+    log_queries: true
+    privacy_level: 0
+
+# Travel hotspot specific setup
+hotspot_setup:
+  description: "Complete setup for travel hotspot with Pi-hole"
+  
+  requirements:
+    - "Raspberry Pi 4 or similar device"
+    - "USB cellular modem or tethered phone"
+    - "WiFi capability for hotspot"
+    - "MicroSD card (16GB+)"
+    
+  network_configuration:
+    cellular_interface: "usb0"      # USB modem interface
+    wifi_interface: "wlan0"         # WiFi hotspot interface
+    hotspot_ssid: "Travel-Hotspot"
+    hotspot_password: "ChangeMe123"
+    pi_ip: "192.168.4.1"
+    dhcp_range: "192.168.4.20-192.168.4.254"
+    
+  setup_steps:
+    - "Configure cellular connection (usb0)"
+    - "Set up WiFi hotspot (wlan0)"
+    - "Install Pi-hole with DHCP enabled"
+    - "Configure DNS forwarding from cellular to WiFi clients"
+    - "Set up traffic routing between interfaces"
+    - "Configure firewall rules for NAT"
+
+# Post-installation configuration
+post_install:
+  initial_setup:
+    - "Access web interface at http://{hostname}/admin"
+    - "Login with configured password"
+    - "Configure upstream DNS servers"
+    - "Enable/disable DHCP as needed"
+    - "Add custom blocklists if desired"
+    
+  hotspot_configuration:
+    - "Enable DHCP server in Pi-hole settings"
+    - "Set DHCP range to match hotspot network"
+    - "Configure router IP as Pi-hole device IP"
+    - "Test DNS resolution from connected devices"
+    
+  recommended_blocklists:
+    - "StevenBlack's Unified hosts (default)"
+    - "Malware Domain List"
+    - "Cameleon List"
+    - "Disconnect.me Tracking Protection"
+    - "EasyList"
+
+# Advanced configurations
+advanced_features:
+  conditional_forwarding:
+    description: "Forward local domain queries to router"
+    enable: true
+    local_domain: "home.lan"
+    router_ip: "192.168.1.1"
+    
+  custom_dns_records:
+    description: "Add local DNS entries"
+    examples:
+      - "192.168.4.1 pihole.local"
+      - "192.168.4.1 router.local"
+      
+  query_logging:
+    description: "Control DNS query logging"
+    options: ["disabled", "anonymous", "full"]
+    recommendation: "anonymous"
+    
+  dhcp_configuration:
+    description: "DHCP server settings for hotspot mode"
+    lease_time: "24h"
+    domain_name: "hotspot.local"
+    router_advertisement: true
+
+# Monitoring and maintenance
+monitoring:
+  web_interface:
+    url: "http://{hostname}/admin"
+    features:
+      - "Real-time query statistics"
+      - "Top blocked domains"
+      - "Query types over time"
+      - "Client activity monitoring"
+      
+  key_metrics:
+    - "Queries blocked percentage"
+    - "DNS response time"
+    - "Active clients count"
+    - "Storage usage for logs"
+    
+  log_locations:
+    query_log: "/opt/pihole/etc-pihole/pihole.log"
+    system_log: "docker logs pihole"
+    
+  maintenance_tasks:
+    - "Regular blocklist updates (automatic)"
+    - "Query log rotation"
+    - "Backup configuration files"
+    - "Monitor disk space usage"
+
+# Backup and restore
+backup:
+  critical_files:
+    - "/opt/pihole/etc-pihole/setupVars.conf"
+    - "/opt/pihole/etc-pihole/custom.list"
+    - "/opt/pihole/etc-pihole/adlists.list"
+    - "/opt/pihole/etc-dnsmasq.d/"
+    
+  backup_command: |
+    tar -czf pihole-backup-$(date +%Y%m%d).tar.gz \
+      /opt/pihole/etc-pihole \
+      /opt/pihole/etc-dnsmasq.d
+      
+  restore_process:
+    - "Stop Pi-hole container"
+    - "Restore backup files to /opt/pihole/"
+    - "Restart Pi-hole container"
+    - "Verify configuration in web interface"
+
+# Security considerations
+security:
+  password_management:
+    - "Change default web interface password"
+    - "Use strong password for admin access"
+    - "Consider enabling 2FA if available"
+    
+  network_security:
+    - "Restrict web interface access to local network"
+    - "Use HTTPS for admin interface in production"
+    - "Regular updates of container image"
+    - "Monitor query logs for suspicious activity"
+    
+  firewall_recommendations:
+    - "Allow DNS (53/tcp, 53/udp) from local network only"
+    - "Allow HTTP (80/tcp) from management network only"
+    - "Block external access to Pi-hole interfaces"
+    - "Enable UFW or iptables rules for protection"
+
+# Travel-specific optimizations
+travel_optimizations:
+  battery_life:
+    - "Use efficient upstream DNS (1.1.1.1, 8.8.8.8)"
+    - "Reduce query log verbosity"
+    - "Set appropriate DHCP lease times"
+    - "Configure Pi to sleep when not in use"
+    
+  data_usage:
+    - "Enable aggressive blocking to reduce mobile data"
+    - "Block large ad networks and trackers"
+    - "Consider caching DNS responses longer"
+    - "Monitor cellular data usage"
+    
+  performance:
+    - "Use fast upstream DNS servers"
+    - "Optimize blocklist size vs performance"
+    - "Configure appropriate cache sizes"
+    - "Monitor system resources"
+
+# Troubleshooting
+troubleshooting:
+  common_issues:
+    - issue: "DNS not working for clients"
+      solutions:
+        - "Check container port bindings: docker ps"
+        - "Verify network configuration: ip route"
+        - "Test DNS resolution: nslookup google.com {pi-ip}"
+        - "Check Pi-hole logs: docker logs pihole"
+        
+    - issue: "Web interface not accessible"
+      solutions:
+        - "Verify port 80 is not blocked by firewall"
+        - "Check container status: docker ps"
+        - "Test direct access: curl http://{pi-ip}/admin"
+        - "Review container logs for errors"
+        
+    - issue: "DHCP not working in hotspot mode"
+      solutions:
+        - "Ensure DHCP is enabled in Pi-hole settings"
+        - "Check DHCP range doesn't conflict with host"
+        - "Verify hostapd configuration for WiFi"
+        - "Check iptables NAT rules"
+        
+    - issue: "High cellular data usage"
+      solutions:
+        - "Add more aggressive blocklists"
+        - "Review query logs for unexpected traffic"
+        - "Block social media and video streaming"
+        - "Configure stricter filtering rules"
+
+# Integration examples
+integrations:
+  with_hostapd:
+    description: "WiFi hotspot integration"
+    config_example: |
+      # /etc/hostapd/hostapd.conf
+      interface=wlan0
+      driver=nl80211
+      ssid=Travel-Hotspot
+      hw_mode=g
+      channel=7
+      wmm_enabled=0
+      macaddr_acl=0
+      auth_algs=1
+      ignore_broadcast_ssid=0
+      wpa=2
+      wpa_passphrase=YourPassword
+      wpa_key_mgmt=WPA-PSK
+      wpa_pairwise=TKIP
+      rsn_pairwise=CCMP
+      
+  with_cellular_modem:
+    description: "USB cellular modem setup"
+    example_interfaces: |
+      # /etc/network/interfaces
+      auto usb0
+      iface usb0 inet dhcp
+      
+  monitoring_integration:
+    description: "Integration with monitoring systems"
+    prometheus_exporter: "pihole-exporter for metrics"
+    grafana_dashboard: "Pi-hole dashboard for visualization"
+
+# Quick deployment guide
+quick_deploy:
+  raspberry_pi_setup:
+    - "Flash Raspberry Pi OS Lite to SD card"
+    - "Enable SSH and configure WiFi"
+    - "Install Docker: curl -fsSL https://get.docker.com | sh"
+    - "Deploy Pi-hole using this service template"
+    - "Configure hotspot with hostapd and dnsmasq"
+    
+  testing_checklist:
+    - "Connect device to hotspot WiFi"
+    - "Verify internet connectivity"
+    - "Test DNS resolution: nslookup google.com"
+    - "Check Pi-hole web interface access"
+    - "Verify ad blocking is working"
+    - "Monitor cellular data usage"
