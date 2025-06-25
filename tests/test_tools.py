@@ -10,7 +10,7 @@ def test_get_available_tools():
     """Test getting available tools."""
     tools = get_available_tools()
     
-    assert len(tools) == 10  # Original 4 + 6 new sitemap tools
+    assert len(tools) == 23  # Original 4 + 6 sitemap tools + 7 CRUD tools + 6 VM tools
     assert "hello_world" in tools
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" in tools
@@ -23,6 +23,23 @@ def test_get_available_tools():
     assert "analyze_network_topology" in tools
     assert "suggest_deployments" in tools
     assert "get_device_changes" in tools
+    
+    # New CRUD infrastructure tools
+    assert "deploy_infrastructure" in tools
+    assert "update_device_config" in tools
+    assert "decommission_device" in tools
+    assert "scale_services" in tools
+    assert "validate_infrastructure_changes" in tools
+    assert "create_infrastructure_backup" in tools
+    assert "rollback_infrastructure_changes" in tools
+    
+    # New VM management tools
+    assert "deploy_vm" in tools
+    assert "control_vm" in tools
+    assert "get_vm_status" in tools
+    assert "list_vms" in tools
+    assert "get_vm_logs" in tools
+    assert "remove_vm" in tools
     
     # Check hello_world tool schema
     hello_tool = tools["hello_world"]
@@ -288,3 +305,342 @@ def test_sitemap_tool_schemas():
     for tool_name in ["get_network_sitemap", "analyze_network_topology", "suggest_deployments"]:
         tool = tools[tool_name]
         assert tool["inputSchema"]["required"] == []
+
+
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.infrastructure_crud.deploy_infrastructure_plan')
+async def test_execute_deploy_infrastructure(mock_deploy):
+    """Test executing deploy_infrastructure tool."""
+    mock_response = json.dumps({
+        "status": "success",
+        "message": "Deployed 2 components successfully",
+        "successful_deployments": 2,
+        "failed_deployments": 0
+    })
+    mock_deploy.return_value = mock_response
+    
+    deployment_plan = {
+        "services": [
+            {
+                "name": "nginx",
+                "type": "docker",
+                "target_device_id": 1,
+                "config": {"image": "nginx:latest", "ports": ["80:80"]}
+            }
+        ]
+    }
+    
+    result = await execute_tool("deploy_infrastructure", {
+        "deployment_plan": deployment_plan,
+        "validate_only": False
+    })
+    
+    assert "content" in result
+    assert len(result["content"]) > 0
+    assert result["content"][0]["type"] == "text"
+    
+    # Verify the function was called
+    mock_deploy.assert_called_once_with(
+        deployment_plan=deployment_plan,
+        validate_only=False
+    )
+
+
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.infrastructure_crud.update_device_configuration')
+async def test_execute_update_device_config(mock_update):
+    """Test executing update_device_config tool."""
+    mock_response = json.dumps({
+        "status": "success",
+        "message": "Applied 1 configuration changes",
+        "device_id": 1,
+        "successful_changes": 1,
+        "failed_changes": 0
+    })
+    mock_update.return_value = mock_response
+    
+    config_changes = {
+        "services": {
+            "nginx": {
+                "type": "docker",
+                "image": "nginx:1.21",
+                "ports": ["80:80", "443:443"]
+            }
+        }
+    }
+    
+    result = await execute_tool("update_device_config", {
+        "device_id": 1,
+        "config_changes": config_changes,
+        "backup_before_change": True,
+        "validate_only": False
+    })
+    
+    assert "content" in result
+    assert len(result["content"]) > 0
+    assert result["content"][0]["type"] == "text"
+    
+    # Verify the function was called
+    mock_update.assert_called_once_with(
+        device_id=1,
+        config_changes=config_changes,
+        backup_before_change=True,
+        validate_only=False
+    )
+
+
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.infrastructure_crud.create_infrastructure_backup')
+async def test_execute_create_backup(mock_backup):
+    """Test executing create_infrastructure_backup tool."""
+    mock_response = json.dumps({
+        "status": "success",
+        "message": "Infrastructure backup created successfully",
+        "backup_id": "backup_20240101_120000_abc12345",
+        "devices_backed_up": 3,
+        "backup_size_mb": 2.5
+    })
+    mock_backup.return_value = mock_response
+    
+    result = await execute_tool("create_infrastructure_backup", {
+        "backup_scope": "full",
+        "include_data": False
+    })
+    
+    assert "content" in result
+    assert len(result["content"]) > 0
+    assert result["content"][0]["type"] == "text"
+    
+    # Verify the function was called
+    mock_backup.assert_called_once_with(
+        backup_scope="full",
+        device_ids=None,
+        include_data=False,
+        backup_name=None
+    )
+
+
+def test_crud_tool_schemas():
+    """Test that all CRUD tools have proper schemas."""
+    tools = get_available_tools()
+    
+    # Test deploy_infrastructure schema
+    deploy_tool = tools["deploy_infrastructure"]
+    assert "deployment_plan" in deploy_tool["inputSchema"]["properties"]
+    assert "validate_only" in deploy_tool["inputSchema"]["properties"]
+    assert deploy_tool["inputSchema"]["required"] == ["deployment_plan"]
+    
+    # Test update_device_config schema
+    update_tool = tools["update_device_config"]
+    assert "device_id" in update_tool["inputSchema"]["properties"]
+    assert "config_changes" in update_tool["inputSchema"]["properties"]
+    assert "backup_before_change" in update_tool["inputSchema"]["properties"]
+    assert update_tool["inputSchema"]["required"] == ["device_id", "config_changes"]
+    
+    # Test decommission_device schema
+    decommission_tool = tools["decommission_device"]
+    assert "device_id" in decommission_tool["inputSchema"]["properties"]
+    assert "migration_plan" in decommission_tool["inputSchema"]["properties"]
+    assert "force_removal" in decommission_tool["inputSchema"]["properties"]
+    assert decommission_tool["inputSchema"]["required"] == ["device_id"]
+    
+    # Test create_infrastructure_backup schema
+    backup_tool = tools["create_infrastructure_backup"]
+    assert "backup_scope" in backup_tool["inputSchema"]["properties"]
+    assert "device_ids" in backup_tool["inputSchema"]["properties"]
+    assert "include_data" in backup_tool["inputSchema"]["properties"]
+    assert backup_tool["inputSchema"]["required"] == []
+    
+    # Test rollback_infrastructure_changes schema
+    rollback_tool = tools["rollback_infrastructure_changes"]
+    assert "backup_id" in rollback_tool["inputSchema"]["properties"]
+    assert "rollback_scope" in rollback_tool["inputSchema"]["properties"]
+    assert rollback_tool["inputSchema"]["required"] == ["backup_id"]
+
+
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.vm_operations.deploy_vm')
+async def test_execute_deploy_vm(mock_deploy_vm):
+    """Test executing deploy_vm tool."""
+    mock_response = json.dumps({
+        "status": "success",
+        "vm_name": "test-nginx",
+        "device_id": 1,
+        "platform": "docker",
+        "container_id": "abc123"
+    })
+    mock_deploy_vm.return_value = mock_response
+    
+    vm_config = {
+        "image": "nginx:latest",
+        "ports": ["80:80"],
+        "environment": {"ENV": "production"}
+    }
+    
+    result = await execute_tool("deploy_vm", {
+        "device_id": 1,
+        "platform": "docker",
+        "vm_name": "test-nginx",
+        "vm_config": vm_config
+    })
+    
+    assert "content" in result
+    assert len(result["content"]) > 0
+    assert result["content"][0]["type"] == "text"
+    
+    # Verify the function was called
+    mock_deploy_vm.assert_called_once_with(
+        device_id=1,
+        platform="docker",
+        vm_name="test-nginx",
+        vm_config=vm_config
+    )
+
+
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.vm_operations.control_vm_state')
+async def test_execute_control_vm(mock_control_vm):
+    """Test executing control_vm tool."""
+    mock_response = json.dumps({
+        "status": "success",
+        "operation": "start",
+        "vm_name": "test-container",
+        "device_id": 1,
+        "platform": "docker"
+    })
+    mock_control_vm.return_value = mock_response
+    
+    result = await execute_tool("control_vm", {
+        "device_id": 1,
+        "platform": "docker",
+        "vm_name": "test-container",
+        "action": "start"
+    })
+    
+    assert "content" in result
+    assert len(result["content"]) > 0
+    assert result["content"][0]["type"] == "text"
+    
+    # Verify the function was called
+    mock_control_vm.assert_called_once_with(
+        device_id=1,
+        platform="docker",
+        vm_name="test-container",
+        action="start"
+    )
+
+
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.vm_operations.list_vms_on_device')
+async def test_execute_list_vms(mock_list_vms):
+    """Test executing list_vms tool."""
+    mock_response = json.dumps({
+        "status": "success",
+        "device_id": 1,
+        "total_vms": 3,
+        "vms": [
+            {"name": "nginx", "platform": "docker", "status": "running"},
+            {"name": "redis", "platform": "docker", "status": "stopped"},
+            {"name": "ubuntu", "platform": "lxd", "status": "running"}
+        ]
+    })
+    mock_list_vms.return_value = mock_response
+    
+    result = await execute_tool("list_vms", {
+        "device_id": 1,
+        "platforms": ["docker", "lxd"]
+    })
+    
+    assert "content" in result
+    assert len(result["content"]) > 0
+    assert result["content"][0]["type"] == "text"
+    
+    # Verify the function was called
+    mock_list_vms.assert_called_once_with(
+        device_id=1,
+        platforms=["docker", "lxd"]
+    )
+
+
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.vm_operations.get_vm_logs')
+async def test_execute_get_vm_logs(mock_get_logs):
+    """Test executing get_vm_logs tool."""
+    mock_response = json.dumps({
+        "status": "success",
+        "vm_name": "test-container",
+        "device_id": 1,
+        "platform": "docker",
+        "lines_requested": 100,
+        "logs": "Starting nginx\\nReady to accept connections"
+    })
+    mock_get_logs.return_value = mock_response
+    
+    result = await execute_tool("get_vm_logs", {
+        "device_id": 1,
+        "platform": "docker",
+        "vm_name": "test-container",
+        "lines": 100
+    })
+    
+    assert "content" in result
+    assert len(result["content"]) > 0
+    assert result["content"][0]["type"] == "text"
+    
+    # Verify the function was called
+    mock_get_logs.assert_called_once_with(
+        device_id=1,
+        platform="docker",
+        vm_name="test-container",
+        lines=100
+    )
+
+
+def test_vm_tool_schemas():
+    """Test that all VM tools have proper schemas."""
+    tools = get_available_tools()
+    
+    # Test deploy_vm schema
+    deploy_tool = tools["deploy_vm"]
+    assert "device_id" in deploy_tool["inputSchema"]["properties"]
+    assert "platform" in deploy_tool["inputSchema"]["properties"]
+    assert "vm_name" in deploy_tool["inputSchema"]["properties"]
+    assert "vm_config" in deploy_tool["inputSchema"]["properties"]
+    assert deploy_tool["inputSchema"]["required"] == ["device_id", "platform", "vm_name"]
+    
+    # Test control_vm schema
+    control_tool = tools["control_vm"]
+    assert "device_id" in control_tool["inputSchema"]["properties"]
+    assert "platform" in control_tool["inputSchema"]["properties"]
+    assert "vm_name" in control_tool["inputSchema"]["properties"]
+    assert "action" in control_tool["inputSchema"]["properties"]
+    assert control_tool["inputSchema"]["required"] == ["device_id", "platform", "vm_name", "action"]
+    
+    # Test get_vm_status schema
+    status_tool = tools["get_vm_status"]
+    assert "device_id" in status_tool["inputSchema"]["properties"]
+    assert "platform" in status_tool["inputSchema"]["properties"]
+    assert "vm_name" in status_tool["inputSchema"]["properties"]
+    assert status_tool["inputSchema"]["required"] == ["device_id", "platform", "vm_name"]
+    
+    # Test list_vms schema
+    list_tool = tools["list_vms"]
+    assert "device_id" in list_tool["inputSchema"]["properties"]
+    assert "platforms" in list_tool["inputSchema"]["properties"]
+    assert list_tool["inputSchema"]["required"] == ["device_id"]
+    
+    # Test get_vm_logs schema
+    logs_tool = tools["get_vm_logs"]
+    assert "device_id" in logs_tool["inputSchema"]["properties"]
+    assert "platform" in logs_tool["inputSchema"]["properties"]
+    assert "vm_name" in logs_tool["inputSchema"]["properties"]
+    assert "lines" in logs_tool["inputSchema"]["properties"]
+    assert logs_tool["inputSchema"]["required"] == ["device_id", "platform", "vm_name"]
+    
+    # Test remove_vm schema
+    remove_tool = tools["remove_vm"]
+    assert "device_id" in remove_tool["inputSchema"]["properties"]
+    assert "platform" in remove_tool["inputSchema"]["properties"]
+    assert "vm_name" in remove_tool["inputSchema"]["properties"]
+    assert "force" in remove_tool["inputSchema"]["properties"]
+    assert remove_tool["inputSchema"]["required"] == ["device_id", "platform", "vm_name"]
