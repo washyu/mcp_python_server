@@ -102,6 +102,16 @@ class HomelabMCPServer:
                 # Parse JSON-RPC request
                 request = json.loads(line)
                 
+                # Check if this is a notification (no id field)
+                if "id" not in request:
+                    # Notifications don't get responses, just process them
+                    method = request.get("method")
+                    if method == "notifications/initialized":
+                        # Client is ready, we can proceed
+                        pass
+                    # Don't send any response for notifications
+                    continue
+                
                 # Handle request
                 response = await self.handle_request(request)
                 
