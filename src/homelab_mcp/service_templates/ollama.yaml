@@ -1,0 +1,219 @@
+name: "Ollama Local LLM Server"
+description: "Self-hosted large language model server optimized for Raspberry Pi and homelab use"
+category: "ai"
+priority: "high"
+version: "0.1.17"
+homepage: "https://ollama.ai"
+
+# System requirements (Pi 4+ recommended)
+requirements:
+  ports: [11434]
+  memory_gb: 4  # Minimum for 7B models
+  disk_gb: 20   # For model storage
+  cpu_cores: 4  # Pi 4+ recommended
+  dependencies:
+    - docker
+
+# Default configuration
+default_port: 11434
+default_config:
+  models_path: "/opt/ollama/models"
+  max_model_size: "7b"  # Pi limitation
+  api_host: "0.0.0.0"
+
+# Installation method
+installation:
+  method: "docker-compose"
+  docker_compose:
+    version: "3.8"
+    services:
+      ollama:
+        container_name: "ollama"
+        image: "ollama/ollama:latest"
+        restart: "unless-stopped"
+        ports:
+          - "11434:11434"
+        environment:
+          - "OLLAMA_HOST=0.0.0.0"
+          - "OLLAMA_MODELS=/models"
+        volumes:
+          - "/opt/ollama/models:/root/.ollama"
+          - "/opt/ollama/config:/etc/ollama"
+        # Pi-specific optimizations
+        deploy:
+          resources:
+            limits:
+              memory: 3G  # Leave 1GB for system
+        healthcheck:
+          test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+        networks:
+          - ollama-network
+    
+    networks:
+      ollama-network:
+        driver: bridge
+
+# Pi-optimized model recommendations
+recommended_models:
+  small_models:  # For Pi 4 (4GB RAM)
+    - name: "tinyllama"
+      size: "637MB"
+      description: "Tiny but capable model"
+    - name: "phi"
+      size: "1.6GB" 
+      description: "Microsoft's small language model"
+    - name: "gemma:2b"
+      size: "1.4GB"
+      description: "Google's lightweight model"
+  
+  medium_models:  # For Pi 5 (8GB RAM)
+    - name: "llama2:7b"
+      size: "3.8GB"
+      description: "Meta's Llama 2 7B model"
+    - name: "mistral:7b"
+      size: "4.1GB"
+      description: "Mistral 7B instruct model"
+    - name: "codellama:7b"
+      size: "3.8GB"
+      description: "Code generation model"
+
+# Post-installation setup
+post_install:
+  initial_setup:
+    - "Access Ollama API at http://{hostname}:11434"
+    - "Install a model: curl -X POST http://{hostname}:11434/api/pull -d '{\"name\": \"tinyllama\"}'"
+    - "Test generation: curl -X POST http://{hostname}:11434/api/generate -d '{\"model\": \"tinyllama\", \"prompt\": \"Hello!\"}'"
+    - "Web UI available via separate container or Open WebUI"
+  
+  model_management:
+    - "List models: curl http://{hostname}:11434/api/tags"
+    - "Remove model: curl -X DELETE http://{hostname}:11434/api/delete -d '{\"name\": \"model_name\"}'"
+    - "Monitor storage: docker exec ollama ollama list"
+
+# Performance optimization for Pi
+performance_tuning:
+  pi_4_settings:
+    memory_limit: "3G"
+    swap_file: "2G"  # Enable swap for larger models
+    cpu_affinity: "0-3"  # Use all cores
+    
+  pi_5_settings:
+    memory_limit: "6G"
+    swap_file: "4G"
+    cpu_affinity: "0-3"
+    
+  model_loading:
+    preload_model: "tinyllama"  # Load default model on startup
+    context_size: 2048  # Reduce for Pi
+    num_threads: 4  # Match Pi cores
+
+# API examples
+api_examples:
+  generate_text:
+    curl: |
+      curl -X POST http://{hostname}:11434/api/generate \
+        -H "Content-Type: application/json" \
+        -d '{
+          "model": "tinyllama",
+          "prompt": "Explain Raspberry Pi GPIO in simple terms",
+          "stream": false
+        }'
+  
+  chat_completion:
+    curl: |
+      curl -X POST http://{hostname}:11434/api/chat \
+        -H "Content-Type: application/json" \
+        -d '{
+          "model": "tinyllama",
+          "messages": [
+            {"role": "user", "content": "Help me with a Python script for Pi GPIO"}
+          ]
+        }'
+
+# Integration options
+integrations:
+  open_webui:
+    description: "Web-based chat interface for Ollama"
+    docker_run: |
+      docker run -d \
+        --name open-webui \
+        -p 8080:8080 \
+        -e OLLAMA_API_BASE_URL=http://ollama:11434/api \
+        --network ollama-network \
+        ghcr.io/open-webui/open-webui:main
+  
+  langchain_python:
+    description: "Python integration with LangChain"
+    example: |
+      from langchain.llms import Ollama
+      llm = Ollama(base_url="http://{hostname}:11434", model="tinyllama")
+      response = llm("Write a Python function")
+
+# Monitoring and maintenance
+monitoring:
+  api_endpoints:
+    - "/api/tags"  # List installed models
+    - "/api/ps"    # Show running models
+    - "/api/version"  # Ollama version
+  
+  resource_monitoring:
+    - "Memory usage: docker stats ollama"
+    - "Model storage: du -sh /opt/ollama/models"
+    - "API performance: curl -w @curl-format.txt http://{hostname}:11434/api/tags"
+  
+  log_locations:
+    container_logs: "docker logs ollama"
+    model_logs: "/opt/ollama/config/logs"
+
+# Troubleshooting
+troubleshooting:
+  common_issues:
+    - issue: "Out of memory when loading model"
+      solutions:
+        - "Use smaller model (tinyllama, phi)"
+        - "Enable swap: sudo dphys-swapfile swapoff && sudo dphys-swapfile setup && sudo dphys-swapfile swapon"
+        - "Increase container memory limit"
+        
+    - issue: "Model download fails"
+      solutions:
+        - "Check internet connection"
+        - "Verify disk space: df -h"
+        - "Try smaller model first"
+        - "Check Ollama logs: docker logs ollama"
+        
+    - issue: "API not responding"
+      solutions:
+        - "Check container status: docker ps"
+        - "Verify port binding: netstat -tlnp | grep 11434"
+        - "Test local API: curl http://localhost:11434/api/tags"
+        - "Check firewall: sudo ufw status"
+
+# Pi-specific considerations
+pi_considerations:
+  hardware_limits:
+    - "Pi 4 (4GB): Stick to 2B-3B parameter models"
+    - "Pi 5 (8GB): Can handle 7B models with swap"
+    - "Storage: Use fast SD card (Class 10) or USB 3.0 SSD"
+    - "Cooling: Ensure adequate cooling for sustained loads"
+  
+  performance_tips:
+    - "Use GPU acceleration if available (Pi 5)"
+    - "Pre-pull models during off-peak hours"
+    - "Monitor temperature: vcgencmd measure_temp"
+    - "Consider external storage for models"
+
+# Security considerations
+security:
+  network_access:
+    - "Bind to localhost for local-only access"
+    - "Use reverse proxy (nginx) for external access"
+    - "Consider VPN access (Tailscale/WireGuard)"
+  
+  model_safety:
+    - "Only download models from trusted sources"
+    - "Review model cards and capabilities"
+    - "Monitor API usage and logs"
+    - "Consider content filtering for external access"
