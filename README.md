@@ -19,7 +19,7 @@ uv sync && uv run python run_server.py
 ## ✨ Key Features
 
 ### 🤖 **AI-Driven Service Installation**
-- **32 MCP Tools** for complete infrastructure lifecycle management
+- **34 MCP Tools** for complete infrastructure lifecycle management
 - **Service Templates** for Jellyfin, Pi-hole, Ollama, Home Assistant, Frigate NVR, and more
 - **Terraform Support** with state management and clean resource tracking
 - **Automated Deployment** with requirement validation and health checking
@@ -48,7 +48,7 @@ uv sync && uv run python run_server.py
 - **Reproducible Builds**: Lock files ensure consistent deployments across environments
 - **Zero Configuration**: Dependencies and virtual environments handled automatically
 
-## 🛠 Available Tools (32 Total)
+## 🛠 Available Tools (34 Total)
 
 ### 🤖 **AI & Machine Learning Tools (4)**
 
@@ -281,6 +281,45 @@ Remove a VM/container from a device:
 "Install Pi-hole using Terraform with state management"
 
 # Both methods support the same services with automatic accelerator detection
+```
+
+## 🎭 Ansible Configuration Management
+
+### **Why Ansible for Multi-Service Deployments**
+Perfect for deploying complete AI homelab stacks like MCP + Ollama + Web UI:
+
+| Capability | Docker Compose | Terraform | Ansible | Best For |
+|------------|----------------|-----------|---------|----------|
+| **Single Host Services** | ✅ Excellent | ✅ Good | ✅ Good | Simple deployments |
+| **Multi-Host Orchestration** | ❌ Limited | ✅ Infrastructure | ✅ Configuration | Complex setups |
+| **System Configuration** | ❌ Container only | ❌ Limited | ✅ Full control | OS-level setup |
+| **Service Dependencies** | ✅ Basic | ✅ Resource deps | ✅ Cross-service config | Interconnected services |
+| **Idempotent Operations** | ✅ Yes | ✅ Yes | ✅ Yes | Safe re-runs |
+
+### **Available Ansible Services**
+```bash
+# Full AI homelab stack (MCP + Ollama + Web UI + Nginx)
+"Install ai_homelab_stack_ansible on my Pi for complete AI setup"
+
+# Individual service with system integration
+"Install ollama_ansible on my server for system-level LLM hosting"
+```
+
+### **Ansible Tools**
+- `check_ansible_service` - Verify Ansible deployment status
+- `run_ansible_playbook` - Execute playbooks with tags/variables
+
+### **Example: Complete AI Stack Deployment**
+```bash
+# One command deploys entire stack:
+# ✅ MCP Server as systemd service
+# ✅ Ollama with GPU/AI accelerator support  
+# ✅ Web UI with pre-configured API endpoints
+# ✅ Nginx reverse proxy with SSL ready
+# ✅ Firewall configuration
+# ✅ Health checks and monitoring
+
+"Install ai_homelab_stack_ansible on my homelab server"
 ```
 
 ## Installation
@@ -518,7 +557,7 @@ mcp_python_server/
 │   └── homelab_mcp/
 │       ├── __init__.py
 │       ├── server.py           # Main MCP server with JSON-RPC protocol
-│       ├── tools.py            # Tool registry and execution (32 tools)
+│       ├── tools.py            # Tool registry and execution (34 tools)
 │       ├── ssh_tools.py        # SSH discovery with hardware detection
 │       ├── service_installer.py # Service installation framework
 │       ├── infrastructure_crud.py # Infrastructure lifecycle management  
