@@ -1,0 +1,264 @@
+name: "Ollama LLM Server (Ansible)"
+description: "Deploy Ollama local LLM server with system-level configuration via Ansible"
+category: "ai"
+priority: "high"
+version: "0.1.17"
+homepage: "https://ollama.ai"
+
+# System requirements
+requirements:
+  ports: [11434]
+  memory_gb: 4
+  disk_gb: 20
+  cpu_cores: 4
+  dependencies:
+    - docker
+
+# Default configuration
+default_port: 11434
+default_config:
+  ollama_models:
+    - "tinyllama"
+    - "phi"
+  enable_gpu: true
+  max_memory: "3G"
+  api_host: "0.0.0.0"
+
+# Ansible installation method
+installation:
+  method: "ansible"
+  ansible:
+    # Pre-installation tasks
+    pre_tasks:
+      - name: "Install Docker if not present"
+        shell: |
+          if ! command -v docker &> /dev/null; then
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+            sudo usermod -aG docker {{ ansible_user }}
+          fi
+        args:
+          creates: /usr/bin/docker
+
+      - name: "Create Ollama directories"
+        file:
+          path: "{{ item }}"
+          state: directory
+          owner: "{{ ansible_user }}"
+          group: "{{ ansible_user }}"
+          mode: '0755'
+        loop:
+          - /opt/ollama/models
+          - /opt/ollama/config
+          - /var/log/ollama
+
+    # Main installation tasks  
+    tasks:
+      - name: "Deploy Ollama container"
+        docker_container:
+          name: ollama
+          image: "ollama/ollama:latest"
+          state: started
+          restart_policy: unless-stopped
+          ports:
+            - "{{ default_port }}:11434"
+          volumes:
+            - "/opt/ollama/models:/root/.ollama"
+            - "/opt/ollama/config:/etc/ollama"
+          environment:
+            OLLAMA_HOST: "{{ api_host }}"
+            OLLAMA_MODELS: "/models"
+          memory: "{{ max_memory }}"
+          devices: "{{ '/dev/nvidia0:/dev/nvidia0' if enable_gpu else [] }}"
+          healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+      - name: "Wait for Ollama to be ready"
+        uri:
+          url: "http://localhost:{{ default_port }}/api/tags"
+          method: GET
+        register: ollama_health
+        until: ollama_health.status == 200
+        retries: 30
+        delay: 10
+
+      - name: "Pull configured models"
+        uri:
+          url: "http://localhost:{{ default_port }}/api/pull"
+          method: POST
+          body_format: json
+          body:
+            name: "{{ item }}"
+        loop: "{{ ollama_models }}"
+        when: ollama_models is defined
+        register: model_pull
+        until: model_pull.status == 200
+        retries: 3
+        delay: 30
+
+      - name: "Create Ollama systemd service"
+        template:
+          src: ollama.service.j2  
+          dest: /etc/systemd/system/ollama.service
+        vars:
+          service_user: "{{ ansible_user }}"
+          ollama_port: "{{ default_port }}"
+
+      - name: "Configure firewall for Ollama"
+        ufw:
+          rule: allow
+          port: "{{ default_port }}"
+          comment: "Ollama LLM API"
+
+    # Post-installation tasks
+    post_tasks:
+      - name: "Start and enable Ollama systemd service"
+        systemd:
+          name: ollama
+          state: started
+          enabled: yes
+          daemon_reload: yes
+
+      - name: "Test model generation"
+        uri:
+          url: "http://localhost:{{ default_port }}/api/generate"
+          method: POST
+          body_format: json
+          body:
+            model: "tinyllama"
+            prompt: "Hello! How are you?"
+            stream: false
+        register: test_generation
+        when: "'tinyllama' in ollama_models"
+
+      - name: "Display deployment summary"
+        debug:
+          msg: |
+            ========================================
+            Ollama LLM Server Deployment Complete!
+            ========================================
+            
+            API Endpoint: http://{{ ansible_default_ipv4.address }}:{{ default_port }}
+            Models Installed: {{ ollama_models | join(', ') }}
+            GPU Enabled: {{ enable_gpu }}
+            Memory Limit: {{ max_memory }}
+            
+            Test Commands:
+            curl http://{{ ansible_default_ipv4.address }}:{{ default_port }}/api/tags
+            curl -X POST http://{{ ansible_default_ipv4.address }}:{{ default_port }}/api/generate \
+              -d '{"model": "tinyllama", "prompt": "Hello!"}'
+
+    # Handlers
+    handlers:
+      - name: "restart ollama"
+        systemd:
+          name: ollama
+          state: restarted
+
+# Service template for systemd
+service_templates:
+  ollama_systemd: |
+    [Unit]
+    Description=Ollama Local LLM Server
+    After=network.target docker.service
+    Requires=docker.service
+    
+    [Service]
+    Type=notify
+    User={{ service_user }}
+    ExecStart=/usr/bin/docker start -a ollama
+    ExecStop=/usr/bin/docker stop ollama
+    Restart=always
+    RestartSec=5
+    
+    [Install]
+    WantedBy=multi-user.target
+
+# Model management
+model_management:
+  available_models:
+    small:
+      - name: "tinyllama"
+        size: "637MB"
+        description: "Tiny but capable model for Pi 4"
+      - name: "phi"
+        size: "1.6GB"
+        description: "Microsoft's small language model"
+    
+    medium:
+      - name: "llama2:7b"
+        size: "3.8GB"
+        description: "Meta's Llama 2 7B model"
+      - name: "mistral:7b"
+        size: "4.1GB"
+        description: "Mistral 7B instruct model"
+
+  management_commands:
+    list_models: "curl http://localhost:{{ default_port }}/api/tags"
+    pull_model: "curl -X POST http://localhost:{{ default_port }}/api/pull -d '{\"name\": \"MODEL_NAME\"}'"
+    remove_model: "curl -X DELETE http://localhost:{{ default_port }}/api/delete -d '{\"name\": \"MODEL_NAME\"}'"
+
+# Post-installation setup
+post_install:
+  verification_steps:
+    - "Check service status: systemctl status ollama"
+    - "Test API: curl http://localhost:{{ default_port }}/api/tags"
+    - "List models: curl http://localhost:{{ default_port }}/api/tags | jq '.models[].name'"
+    - "Test generation: curl -X POST http://localhost:{{ default_port }}/api/generate -d '{\"model\": \"tinyllama\", \"prompt\": \"Hello!\"}'"
+
+  integration_examples:
+    python: |
+      from langchain.llms import Ollama
+      llm = Ollama(base_url="http://localhost:{{ default_port }}", model="tinyllama")
+      response = llm("Write a Python function")
+    
+    curl: |
+      curl -X POST http://localhost:{{ default_port }}/api/chat \
+        -H "Content-Type: application/json" \
+        -d '{
+          "model": "tinyllama",
+          "messages": [
+            {"role": "user", "content": "Help me with a Python script"}
+          ]
+        }'
+
+# Monitoring and maintenance
+monitoring:
+  health_endpoints:
+    - "http://localhost:{{ default_port }}/api/tags"
+    - "http://localhost:{{ default_port }}/api/ps"
+    - "http://localhost:{{ default_port }}/api/version"
+
+  log_locations:
+    - "journalctl -u ollama -f"
+    - "docker logs ollama"
+    - "/var/log/ollama/"
+
+  performance_monitoring:
+    - "docker stats ollama"
+    - "curl http://localhost:{{ default_port }}/api/ps"
+    - "df -h /opt/ollama/models"
+
+# Troubleshooting
+troubleshooting:
+  common_issues:
+    - issue: "Container fails to start"
+      solutions:
+        - "Check Docker service: systemctl status docker"
+        - "Verify permissions: sudo usermod -aG docker {{ ansible_user }}"
+        - "Check logs: docker logs ollama"
+    
+    - issue: "Out of memory errors"
+      solutions:
+        - "Use smaller model: tinyllama instead of llama2:7b"
+        - "Increase swap: sudo dphys-swapfile setup"
+        - "Reduce memory limit in container"
+    
+    - issue: "GPU not detected"
+      solutions:
+        - "Install nvidia-docker: distribution specific instructions"
+        - "Check nvidia-smi output"
+        - "Verify container runtime: docker run --gpus all nvidia/cuda:11.0-base nvidia-smi"
