@@ -14,7 +14,7 @@ requirements:
   dependencies:
     - docker
   hardware:
-    ai_accelerators: ["Coral Edge TPU", "Hailo-8", "Intel Neural Compute Stick"]
+    ai_accelerators: ["MemryX MX3", "Coral Edge TPU", "Hailo-8", "Intel Neural Compute Stick"]
 
 # Default configuration
 default_port: 8080
@@ -41,9 +41,10 @@ installation:
           - "TF_CPP_MIN_LOG_LEVEL=2"
         devices:
           # AI Accelerator access
-          - "/dev/bus/usb:/dev/bus/usb"        # USB devices (Coral USB, Intel NCS)
+          - "/dev/bus/usb:/dev/bus/usb"        # USB devices (Coral USB, Intel NCS, MemryX USB)
           - "/dev/apex_0:/dev/apex_0"          # Coral M.2/PCIe
           - "/dev/hailo0:/dev/hailo0"          # Hailo accelerator
+          - "/dev/memryx0:/dev/memryx0"        # MemryX accelerator
           - "/dev/dri:/dev/dri"                # GPU acceleration
         volumes:
           - "/opt/ai-inference/models:/models"
@@ -97,6 +98,25 @@ installation:
 
 # AI Accelerator auto-detection
 accelerator_detection:
+  memryx_mx3:
+    usb_detection:
+      command: "lsusb | grep '2a03:' || lsusb | grep 'MemryX'"
+      driver: "memryx-runtime"
+      python_lib: "memryx"
+      
+    pcie_detection:
+      command: "ls /dev/memryx* || lspci | grep -i memryx"
+      driver: "memryx-driver"
+      python_lib: "memryx"
+    
+    configuration:
+      onnx: true
+      tensorflow: false
+      pytorch: true
+      model_format: ".onnx"
+      performance: "20+ TOPS"
+      power: "3W"
+      
   coral_edge_tpu:
     usb_detection:
       command: "lsusb | grep '18d1:9302'"
@@ -215,6 +235,12 @@ custom_inference_setup:
         
         def detect_accelerator(self):
             """Auto-detect available AI accelerator"""
+            # Check for MemryX accelerator first (newest)
+            if self._check_memryx():
+                self.accelerator_type = 'memryx'
+                logger.info("Detected MemryX MX3 accelerator")
+                return
+            
             # Check for Coral TPU
             if self._check_coral():
                 self.accelerator_type = 'coral'
@@ -236,6 +262,26 @@ custom_inference_setup:
             # Fallback to CPU
             self.accelerator_type = 'cpu'
             logger.info("Using CPU inference (no accelerator detected)")
+        
+        def _check_memryx(self):
+            try:
+                # Check for MemryX USB device
+                result = subprocess.run(['lsusb'], capture_output=True, text=True)
+                memryx_usb = '2a03:' in result.stdout or 'MemryX' in result.stdout
+                
+                # Check for MemryX PCIe device
+                memryx_pcie = os.path.exists('/dev/memryx0') or os.path.exists('/dev/memryx1')
+                
+                # Check lspci for MemryX devices
+                try:
+                    pci_result = subprocess.run(['lspci'], capture_output=True, text=True)
+                    memryx_pci = 'memryx' in pci_result.stdout.lower()
+                except:
+                    memryx_pci = False
+                
+                return memryx_usb or memryx_pcie or memryx_pci
+            except:
+                return False
         
         def _check_coral(self):
             try:
@@ -262,13 +308,29 @@ custom_inference_setup:
             """Load appropriate model for detected accelerator"""
             model_path = f"/models/{self.accelerator_type}_model"
             
-            if self.accelerator_type == 'coral':
+            if self.accelerator_type == 'memryx':
+                self._load_memryx_model(model_path)
+            elif self.accelerator_type == 'coral':
                 self._load_coral_model(model_path)
             elif self.accelerator_type == 'hailo':
                 self._load_hailo_model(model_path)
             elif self.accelerator_type == 'intel_ncs':
                 self._load_openvino_model(model_path)
             else:
+                self._load_cpu_model(model_path)
+        
+        def _load_memryx_model(self, model_path):
+            try:
+                import memryx
+                
+                model_file = f"{model_path}.onnx"
+                # MemryX typically uses ONNX models
+                self.memryx_model = memryx.Model(model_file)
+                self.interpreter = self.memryx_model  # For compatibility
+                logger.info(f"Loaded MemryX model: {model_file}")
+            except Exception as e:
+                logger.error(f"Failed to load MemryX model: {e}")
+                logger.info("Falling back to CPU inference")
                 self._load_cpu_model(model_path)
         
         def _load_coral_model(self, model_path):
@@ -348,6 +410,7 @@ custom_inference_setup:
         return jsonify({
             "type": accelerator.accelerator_type,
             "available_accelerators": {
+                "memryx": accelerator._check_memryx(),
                 "coral": accelerator._check_coral(),
                 "hailo": accelerator._check_hailo(),
                 "intel_ncs": accelerator._check_intel_ncs()
@@ -399,6 +462,7 @@ custom_inference_setup:
 # Model management
 model_management:
   supported_formats:
+    memryx_mx3: [".onnx", ".onnx (quantized)"]
     coral_tpu: [".tflite (EdgeTPU compiled)"]
     hailo: [".hef", ".onnx"]
     intel_ncs: [".xml/.bin (OpenVINO)", ".onnx"]
@@ -462,6 +526,12 @@ api_examples:
 # Performance comparisons
 performance_benchmarks:
   typical_results:
+    memryx_mx3:
+      yolov5s: "12ms (83 FPS)"
+      resnet50: "4ms (250 FPS)"
+      mobilenet_ssd: "15ms (66 FPS)"
+      power: "3W"
+    
     coral_usb:
       mobilenet_ssd: "22ms (45 FPS)"
       efficientnet: "5ms (200 FPS)"

@@ -14,7 +14,7 @@ requirements:
   dependencies:
     - docker
   hardware:
-    recommended: ["Coral Edge TPU", "Hailo-8", "Intel Neural Compute Stick"]
+    recommended: ["MemryX MX3", "Coral Edge TPU", "Hailo-8", "Intel Neural Compute Stick"]
     optional: ["Pi Camera Module", "USB Cameras"]
 
 # Default configuration
@@ -54,6 +54,7 @@ installation:
           - "/etc/localtime:/etc/localtime:ro"
           # Coral TPU edge case mapping
           - "/dev/apex_0:/dev/apex_0"  # Coral M.2/mPCIe
+          - "/dev/memryx0:/dev/memryx0"  # MemryX accelerator
         ports:
           - "5000:5000"    # Web UI
           - "8554:8554"    # RTSP
@@ -80,6 +81,25 @@ installation:
 
 # AI Accelerator detection and configuration
 ai_accelerators:
+  memryx_mx3:
+    usb_version:
+      detection: "lsusb | grep '2a03:' || lsusb | grep 'MemryX'"
+      device_path: "/dev/bus/usb"
+      config: |
+        detectors:
+          memryx:
+            type: onnx
+            device: /dev/memryx0
+    
+    pcie_version:
+      detection: "ls /dev/memryx*"
+      device_path: "/dev/memryx0"
+      config: |
+        detectors:
+          memryx:
+            type: onnx
+            device: /dev/memryx0
+  
   coral_edge_tpu:
     usb_version:
       detection: "lsusb | grep '18d1:9302'"
