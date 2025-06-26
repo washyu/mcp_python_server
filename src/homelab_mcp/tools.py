@@ -915,7 +915,6 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         return {"content": [{"type": "text", "text": result}]}
     
     elif tool_name == "get_network_sitemap":
-        import json
         devices = sitemap.get_all_devices()
         result = json.dumps({
             "status": "success",
@@ -925,7 +924,6 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         return {"content": [{"type": "text", "text": result}]}
     
     elif tool_name == "analyze_network_topology":
-        import json
         analysis = sitemap.analyze_network_topology()
         result = json.dumps({
             "status": "success",
@@ -934,7 +932,6 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         return {"content": [{"type": "text", "text": result}]}
     
     elif tool_name == "suggest_deployments":
-        import json
         suggestions = sitemap.suggest_deployments()
         result = json.dumps({
             "status": "success",
@@ -943,7 +940,6 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         return {"content": [{"type": "text", "text": result}]}
     
     elif tool_name == "get_device_changes":
-        import json
         changes = sitemap.get_device_changes(
             arguments["device_id"],
             arguments.get("limit", 10)
