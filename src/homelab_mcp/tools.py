@@ -791,6 +791,103 @@ TOOLS = {
             },
             "required": ["service_name", "hostname"]
         }
+    },
+    "plan_terraform_service": {
+        "description": "Generate a Terraform plan to preview changes without applying them",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service to plan"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the device"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "config_override": {
+                    "type": "object",
+                    "description": "Optional configuration overrides for the service"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["service_name", "hostname"]
+        }
+    },
+    "destroy_terraform_service": {
+        "description": "Destroy a Terraform-managed service and clean up all resources",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service to destroy"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the device"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["service_name", "hostname"]
+        }
+    },
+    "refresh_terraform_service": {
+        "description": "Refresh Terraform state and detect configuration drift",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service to refresh"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the device"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["service_name", "hostname"]
+        }
     }
 }
 
@@ -1035,6 +1132,24 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         from .service_installer import ServiceInstaller
         installer = ServiceInstaller()
         result = await installer.get_service_status(**arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "plan_terraform_service":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        result = await installer.plan_terraform_service(**arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "destroy_terraform_service":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        result = await installer.destroy_terraform_service(**arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "refresh_terraform_service":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        result = await installer.refresh_terraform_service(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
     
     else:
