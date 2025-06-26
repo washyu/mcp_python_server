@@ -19,7 +19,7 @@ uv sync && uv run python run_server.py
 ## ✨ Key Features
 
 ### 🤖 **AI-Driven Service Installation**
-- **33 MCP Tools** for complete infrastructure lifecycle management
+- **32 MCP Tools** for complete infrastructure lifecycle management
 - **Service Templates** for Jellyfin, Pi-hole, Ollama, Home Assistant, Frigate NVR, and more
 - **Terraform Support** with state management and clean resource tracking
 - **Automated Deployment** with requirement validation and health checking
@@ -48,7 +48,7 @@ uv sync && uv run python run_server.py
 - **Reproducible Builds**: Lock files ensure consistent deployments across environments
 - **Zero Configuration**: Dependencies and virtual environments handled automatically
 
-## 🛠 Available Tools (33 Total)
+## 🛠 Available Tools (32 Total)
 
 ### 🤖 **AI & Machine Learning Tools (4)**
 
@@ -91,9 +91,6 @@ Cleanly destroy Terraform-managed services and remove all associated resources.
 - **Energy monitoring** and mobile app integration
 
 ### SSH & Admin Tools (4)
-
-#### `hello_world`
-A simple test tool that returns a greeting message.
 
 #### `ssh_discover`
 SSH into a remote system and gather comprehensive system information including:
@@ -354,9 +351,6 @@ You can test the server by sending JSON-RPC requests:
 # List available tools
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | python run_server.py
 
-# Call hello_world tool
-echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"hello_world"}}' | python run_server.py
-
 # Discover a system via SSH (with password)
 echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ssh_discover","arguments":{"hostname":"192.168.1.100","username":"user","password":"pass"}}}' | python run_server.py
 
@@ -524,7 +518,7 @@ mcp_python_server/
 │   └── homelab_mcp/
 │       ├── __init__.py
 │       ├── server.py           # Main MCP server with JSON-RPC protocol
-│       ├── tools.py            # Tool registry and execution (33 tools)
+│       ├── tools.py            # Tool registry and execution (32 tools)
 │       ├── ssh_tools.py        # SSH discovery with hardware detection
 │       ├── service_installer.py # Service installation framework
 │       ├── infrastructure_crud.py # Infrastructure lifecycle management  

@@ -9,14 +9,6 @@ from .sitemap import NetworkSiteMap, discover_and_store, bulk_discover_and_store
 
 # Tool registry
 TOOLS = {
-    "hello_world": {
-        "description": "Returns a greeting from the homelab MCP server",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
-    },
     "ssh_discover": {
         "description": "SSH into a system and gather hardware/system information",
         "inputSchema": {
@@ -902,10 +894,7 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
     # Initialize sitemap instance
     sitemap = NetworkSiteMap()
     
-    if tool_name == "hello_world":
-        return {"content": [{"type": "text", "text": "Hello from the Homelab MCP server!"}]}
-    
-    elif tool_name == "ssh_discover":
+    if tool_name == "ssh_discover":
         result = await ssh_discover_system(**arguments)
         return {"content": [{"type": "text", "text": result}]}
     
