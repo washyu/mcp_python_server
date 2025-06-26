@@ -1,5 +1,6 @@
 """Tool definitions and execution for the Homelab MCP server."""
 
+import json
 from typing import Any, Dict
 
 from .ssh_tools import ssh_discover_system, setup_remote_mcp_admin, verify_mcp_admin_access
@@ -672,6 +673,124 @@ TOOLS = {
             },
             "required": ["hostname", "username", "password"]
         }
+    },
+    "list_available_services": {
+        "description": "List all available homelab services that can be installed",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    "get_service_info": {
+        "description": "Get detailed information about a specific service",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service to get information about"
+                }
+            },
+            "required": ["service_name"]
+        }
+    },
+    "check_service_requirements": {
+        "description": "Check if a device meets the requirements for a service installation",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service to check requirements for"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the target device"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["service_name", "hostname"]
+        }
+    },
+    "install_service": {
+        "description": "Install a homelab service on a target device",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service to install (e.g., 'jellyfin', 'nextcloud')"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the target device"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "config_override": {
+                    "type": "object",
+                    "description": "Optional configuration overrides for the service"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["service_name", "hostname"]
+        }
+    },
+    "get_service_status": {
+        "description": "Get the current status of an installed service",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service to check status for"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the device"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["service_name", "hostname"]
+        }
     }
 }
 
@@ -880,6 +999,43 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         from .ssh_tools import update_mcp_admin_groups
         result = await update_mcp_admin_groups(**arguments)
         return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "list_available_services":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        services = installer.get_available_services()
+        result = {
+            "available_services": services,
+            "count": len(services)
+        }
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "get_service_info":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        service_info = installer.get_service_info(arguments["service_name"])
+        if service_info:
+            return {"content": [{"type": "text", "text": json.dumps(service_info, indent=2)}]}
+        else:
+            return {"content": [{"type": "text", "text": f"Service '{arguments['service_name']}' not found"}]}
+    
+    elif tool_name == "check_service_requirements":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        result = await installer.check_service_requirements(**arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "install_service":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        result = await installer.install_service(**arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "get_service_status":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        result = await installer.get_service_status(**arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
     
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

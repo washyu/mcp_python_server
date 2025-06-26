@@ -35,8 +35,7 @@ class HomelabMCPServer:
                 return self._success_response(request_id, {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {
-                        "tools": {},
-                        "prompts": {}
+                        "tools": {}
                     },
                     "serverInfo": {
                         "name": "homelab-mcp",

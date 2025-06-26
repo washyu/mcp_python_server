@@ -385,6 +385,83 @@ async def ssh_discover_system(
                 os_line = cast(str, os_result.stdout).strip()
                 if '=' in os_line:
                     system_info['os'] = os_line.split('=', 1)[1].strip('"')
+            
+            # Get USB devices
+            usb_devices = []
+            lsusb_result = await conn.run('lsusb 2>/dev/null', check=False)
+            if lsusb_result.exit_status == 0 and lsusb_result.stdout:
+                for line in cast(str, lsusb_result.stdout).strip().split('\n'):
+                    if line:
+                        # Parse lsusb output: Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+                        parts = line.split(' ', 6)
+                        if len(parts) >= 7:
+                            device_info = {
+                                'bus': parts[1],
+                                'device': parts[3].rstrip(':'),
+                                'vendor_id': parts[5].split(':')[0],
+                                'product_id': parts[5].split(':')[1],
+                                'description': parts[6] if len(parts) > 6 else 'Unknown'
+                            }
+                            usb_devices.append(device_info)
+            if usb_devices:
+                system_info['usb_devices'] = usb_devices
+            
+            # Get PCI devices
+            pci_devices = []
+            lspci_result = await conn.run('lspci 2>/dev/null', check=False)
+            if lspci_result.exit_status == 0 and lspci_result.stdout:
+                for line in cast(str, lspci_result.stdout).strip().split('\n'):
+                    if line:
+                        # Parse lspci output: 00:00.0 Host bridge: Intel Corporation Device 4660 (rev 02)
+                        parts = line.split(' ', 2)
+                        if len(parts) >= 3:
+                            device_info = {
+                                'slot': parts[0],
+                                'class': parts[1].rstrip(':'),
+                                'description': parts[2]
+                            }
+                            # Identify important device types
+                            if 'network' in parts[1].lower() or 'ethernet' in parts[2].lower() or 'wireless' in parts[2].lower():
+                                device_info['type'] = 'network'
+                            elif 'vga' in parts[1].lower() or 'display' in parts[1].lower():
+                                device_info['type'] = 'graphics'
+                            elif 'usb' in parts[1].lower() or 'usb' in parts[2].lower():
+                                device_info['type'] = 'usb_controller'
+                            elif 'sata' in parts[1].lower() or 'storage' in parts[1].lower():
+                                device_info['type'] = 'storage'
+                            pci_devices.append(device_info)
+            if pci_devices:
+                system_info['pci_devices'] = pci_devices
+            
+            # Get block devices (drives)
+            block_devices = []
+            lsblk_result = await conn.run('lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL 2>/dev/null', check=False)
+            if lsblk_result.exit_status == 0 and lsblk_result.stdout:
+                try:
+                    lsblk_data = json.loads(cast(str, lsblk_result.stdout))
+                    if 'blockdevices' in lsblk_data:
+                        for device in lsblk_data['blockdevices']:
+                            if device.get('type') == 'disk':
+                                device_info = {
+                                    'name': device.get('name'),
+                                    'size': device.get('size'),
+                                    'model': device.get('model', 'Unknown'),
+                                    'partitions': []
+                                }
+                                # Add partition info if available
+                                if 'children' in device:
+                                    for child in device['children']:
+                                        if child.get('type') == 'part':
+                                            device_info['partitions'].append({
+                                                'name': child.get('name'),
+                                                'size': child.get('size'),
+                                                'mountpoint': child.get('mountpoint')
+                                            })
+                                block_devices.append(device_info)
+                except json.JSONDecodeError:
+                    pass
+            if block_devices:
+                system_info['block_devices'] = block_devices
         
         return json.dumps({
             "status": "success",

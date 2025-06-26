@@ -10,7 +10,7 @@ def test_get_available_tools():
     """Test getting available tools."""
     tools = get_available_tools()
     
-    assert len(tools) == 25  # Original 4 + 6 sitemap tools + 7 CRUD tools + 6 VM tools + 2 ssh tools
+    assert len(tools) == 30  # Original 4 + 6 sitemap tools + 7 CRUD tools + 6 VM tools + 2 ssh tools + 5 service tools
     assert "hello_world" in tools
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" in tools
