@@ -880,6 +880,82 @@ TOOLS = {
             },
             "required": ["service_name", "hostname"]
         }
+    },
+    "check_ansible_service": {
+        "description": "Check the status of an Ansible-managed service deployment",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service to check"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the device"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["service_name", "hostname"]
+        }
+    },
+    "run_ansible_playbook": {
+        "description": "Run an existing Ansible playbook for a service",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service playbook to run"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the device"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (not needed for mcp_admin after setup)"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Ansible tags to run specific tasks"
+                },
+                "extra_vars": {
+                    "type": "object",
+                    "description": "Extra variables to pass to the playbook"
+                },
+                "check_mode": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Run in check mode (dry run)"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22
+                }
+            },
+            "required": ["service_name", "hostname"]
+        }
     }
 }
 
@@ -1135,6 +1211,18 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         from .service_installer import ServiceInstaller
         installer = ServiceInstaller()
         result = await installer.refresh_terraform_service(**arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "check_ansible_service":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        result = await installer.check_ansible_service(**arguments)
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "run_ansible_playbook":
+        from .service_installer import ServiceInstaller
+        installer = ServiceInstaller()
+        result = await installer.run_ansible_playbook(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
     
     else:

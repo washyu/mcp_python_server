@@ -177,6 +177,10 @@ class ServiceInstaller:
             return await self._install_terraform_service(
                 service_name, service, hostname, username, password, config_override
             )
+        elif install_method == "ansible":
+            return await self._install_ansible_service(
+                service_name, service, hostname, username, password, config_override
+            )
         else:
             return {
                 "status": "error",
@@ -988,4 +992,402 @@ class ServiceInstaller:
             "has_changes": has_changes,
             "refresh_output": refresh_data.get("output", ""),
             "plan_output": plan_data.get("output", "") if has_changes else None
+        }
+    
+    async def _install_ansible_service(
+        self,
+        service_name: str,
+        service: Dict,
+        hostname: str,
+        username: str,
+        password: Optional[str],
+        config_override: Optional[Dict]
+    ) -> Dict[str, Any]:
+        """Install a service using Ansible playbook."""
+        ansible_config = service.get("installation", {}).get("ansible", {})
+        
+        if not ansible_config:
+            return {
+                "status": "error",
+                "error": "No Ansible configuration found in service template"
+            }
+        
+        # Create Ansible directory structure
+        ansible_dir = f"/opt/ansible/{service_name}"
+        setup_cmd = f"""
+sudo mkdir -p {ansible_dir}/playbooks {ansible_dir}/inventory {ansible_dir}/group_vars {ansible_dir}/host_vars && 
+sudo chown -R {username}:{username} {ansible_dir}
+"""
+        
+        setup_result = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command=setup_cmd,
+            sudo=True
+        )
+        
+        setup_data = json.loads(setup_result)
+        if setup_data.get("exit_code") != 0:
+            return {
+                "status": "error",
+                "error": "Failed to create Ansible directory structure",
+                "output": setup_data.get("output", "")
+            }
+        
+        # Generate inventory file
+        inventory_content = self._generate_ansible_inventory(hostname, username, config_override)
+        inventory_result = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command=f"cat > {ansible_dir}/inventory/hosts << 'EOF'\n{inventory_content}\nEOF"
+        )
+        
+        inventory_data = json.loads(inventory_result)
+        if inventory_data.get("exit_code") != 0:
+            return {
+                "status": "error",
+                "error": "Failed to create inventory file",
+                "output": inventory_data.get("output", "")
+            }
+        
+        # Generate playbook
+        playbook_content = self._generate_ansible_playbook(service, service_name, config_override)
+        playbook_result = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command=f"cat > {ansible_dir}/playbooks/{service_name}.yml << 'EOF'\n{playbook_content}\nEOF"
+        )
+        
+        playbook_data = json.loads(playbook_result)
+        if playbook_data.get("exit_code") != 0:
+            return {
+                "status": "error",
+                "error": "Failed to create playbook",
+                "output": playbook_data.get("output", "")
+            }
+        
+        # Generate group variables
+        if config_override or service.get("default_config"):
+            vars_content = self._generate_ansible_vars(service, config_override)
+            vars_result = await ssh_execute_command(
+                hostname=hostname,
+                username=username,
+                password=password,
+                command=f"cat > {ansible_dir}/group_vars/all.yml << 'EOF'\n{vars_content}\nEOF"
+            )
+        
+        # Install Ansible if not present
+        ansible_check = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command="which ansible-playbook"
+        )
+        
+        ansible_data = json.loads(ansible_check)
+        if ansible_data.get("exit_code") != 0:
+            # Install Ansible
+            install_cmd = """
+if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y ansible
+elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y epel-release && sudo yum install -y ansible
+elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y ansible
+elif command -v pacman >/dev/null 2>&1; then
+    sudo pacman -S --noconfirm ansible
+else
+    echo "Unsupported package manager for Ansible installation"
+    exit 1
+fi
+"""
+            install_result = await ssh_execute_command(
+                hostname=hostname,
+                username=username,
+                password=password,
+                command=install_cmd,
+                sudo=True
+            )
+            
+            install_data = json.loads(install_result)
+            if install_data.get("exit_code") != 0:
+                return {
+                    "status": "error",
+                    "error": "Failed to install Ansible",
+                    "output": install_data.get("output", "")
+                }
+        
+        # Run the playbook
+        run_cmd = f"cd {ansible_dir} && ansible-playbook -i inventory/hosts playbooks/{service_name}.yml"
+        
+        # Add verbose output if in debug mode
+        if config_override and config_override.get("debug", False):
+            run_cmd += " -vvv"
+        
+        run_result = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command=run_cmd
+        )
+        
+        run_data = json.loads(run_result)
+        
+        return {
+            "status": "success" if run_data.get("exit_code") == 0 else "error",
+            "service": service_name,
+            "method": "ansible",
+            "output": run_data.get("output", ""),
+            "ansible_dir": ansible_dir,
+            "playbook_path": f"{ansible_dir}/playbooks/{service_name}.yml"
+        }
+    
+    def _generate_ansible_inventory(
+        self, 
+        hostname: str, 
+        username: str, 
+        config_override: Optional[Dict]
+    ) -> str:
+        """Generate Ansible inventory file."""
+        inventory = f"""[homelab]
+{hostname} ansible_user={username} ansible_ssh_private_key_file=~/.ssh/mcp_admin_rsa
+
+[homelab:vars]
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+"""
+        
+        # Add any custom inventory variables
+        if config_override and "inventory_vars" in config_override:
+            inventory += "\n"
+            for key, value in config_override["inventory_vars"].items():
+                inventory += f"{key}={value}\n"
+        
+        return inventory
+    
+    def _generate_ansible_playbook(
+        self, 
+        service: Dict, 
+        service_name: str, 
+        config_override: Optional[Dict]
+    ) -> str:
+        """Generate Ansible playbook from service template."""
+        ansible_config = service.get("installation", {}).get("ansible", {})
+        
+        # Base playbook structure
+        playbook = f"""---
+- name: Deploy {service.get('name', service_name)}
+  hosts: homelab
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    service_name: {service_name}
+    service_description: "{service.get('description', '')}"
+    
+  tasks:
+"""
+        
+        # Add pre-tasks if defined
+        if "pre_tasks" in ansible_config:
+            playbook += "    # Pre-installation tasks\n"
+            for task in ansible_config["pre_tasks"]:
+                playbook += self._format_ansible_task(task, 4)
+        
+        # Add main tasks
+        if "tasks" in ansible_config:
+            playbook += "    # Main installation tasks\n"
+            for task in ansible_config["tasks"]:
+                playbook += self._format_ansible_task(task, 4)
+        
+        # Add post-tasks if defined
+        if "post_tasks" in ansible_config:
+            playbook += "    # Post-installation tasks\n"
+            for task in ansible_config["post_tasks"]:
+                playbook += self._format_ansible_task(task, 4)
+        
+        # Add handlers if defined
+        if "handlers" in ansible_config:
+            playbook += "\n  handlers:\n"
+            for handler in ansible_config["handlers"]:
+                playbook += self._format_ansible_task(handler, 4)
+        
+        return playbook
+    
+    def _format_ansible_task(self, task: Dict, indent: int) -> str:
+        """Format an Ansible task with proper indentation."""
+        spaces = " " * indent
+        task_str = f"{spaces}- name: {task.get('name', 'Unnamed task')}\n"
+        
+        for key, value in task.items():
+            if key == "name":
+                continue
+            
+            if isinstance(value, dict):
+                task_str += f"{spaces}  {key}:\n"
+                for k, v in value.items():
+                    task_str += f"{spaces}    {k}: {v}\n"
+            elif isinstance(value, list):
+                task_str += f"{spaces}  {key}:\n"
+                for item in value:
+                    task_str += f"{spaces}    - {item}\n"
+            else:
+                task_str += f"{spaces}  {key}: {value}\n"
+        
+        return task_str + "\n"
+    
+    def _generate_ansible_vars(
+        self, 
+        service: Dict, 
+        config_override: Optional[Dict]
+    ) -> str:
+        """Generate Ansible variables file."""
+        vars_content = "---\n# Service configuration variables\n\n"
+        
+        # Add default configuration
+        default_config = service.get("default_config", {})
+        for key, value in default_config.items():
+            vars_content += f"{key}: {yaml.dump(value).strip()}\n"
+        
+        # Add configuration overrides
+        if config_override:
+            vars_content += "\n# Configuration overrides\n"
+            for key, value in config_override.items():
+                if key not in ["debug", "inventory_vars"]:  # Skip special keys
+                    vars_content += f"{key}: {yaml.dump(value).strip()}\n"
+        
+        return vars_content
+    
+    async def check_ansible_service(
+        self,
+        service_name: str,
+        hostname: str,
+        username: str = "mcp_admin",
+        password: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Check the status of an Ansible-managed service."""
+        ansible_dir = f"/opt/ansible/{service_name}"
+        
+        # Check if Ansible directory exists
+        dir_check = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command=f"test -d {ansible_dir}"
+        )
+        
+        dir_data = json.loads(dir_check)
+        if dir_data.get("exit_code") != 0:
+            return {
+                "status": "not_found",
+                "service": service_name,
+                "error": f"Ansible deployment not found: {ansible_dir}"
+            }
+        
+        # Check playbook exists
+        playbook_path = f"{ansible_dir}/playbooks/{service_name}.yml"
+        playbook_check = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command=f"test -f {playbook_path}"
+        )
+        
+        playbook_data = json.loads(playbook_check)
+        if playbook_data.get("exit_code") != 0:
+            return {
+                "status": "error",
+                "service": service_name,
+                "error": f"Playbook not found: {playbook_path}"
+            }
+        
+        # Get file information
+        info_result = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command=f"ls -la {ansible_dir}/playbooks/{service_name}.yml {ansible_dir}/inventory/hosts"
+        )
+        
+        info_data = json.loads(info_result)
+        
+        # Check if Ansible is installed
+        ansible_check = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command="ansible-playbook --version"
+        )
+        
+        ansible_data = json.loads(ansible_check)
+        ansible_installed = ansible_data.get("exit_code") == 0
+        
+        return {
+            "status": "deployed",
+            "service": service_name,
+            "ansible_dir": ansible_dir,
+            "playbook_path": playbook_path,
+            "ansible_installed": ansible_installed,
+            "ansible_version": ansible_data.get("output", "").split('\n')[0] if ansible_installed else None,
+            "files_info": info_data.get("output", "")
+        }
+    
+    async def run_ansible_playbook(
+        self,
+        service_name: str,
+        hostname: str,
+        username: str = "mcp_admin",
+        password: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        extra_vars: Optional[Dict] = None,
+        check_mode: bool = False
+    ) -> Dict[str, Any]:
+        """Run an existing Ansible playbook for a service."""
+        ansible_dir = f"/opt/ansible/{service_name}"
+        playbook_path = f"{ansible_dir}/playbooks/{service_name}.yml"
+        
+        # Check if playbook exists
+        check_result = await self.check_ansible_service(service_name, hostname, username, password)
+        if check_result["status"] != "deployed":
+            return check_result
+        
+        # Build ansible-playbook command
+        cmd = f"cd {ansible_dir} && ansible-playbook -i inventory/hosts playbooks/{service_name}.yml"
+        
+        # Add check mode if requested
+        if check_mode:
+            cmd += " --check"
+        
+        # Add tags if specified
+        if tags:
+            cmd += f" --tags {','.join(tags)}"
+        
+        # Add extra variables if specified
+        if extra_vars:
+            for key, value in extra_vars.items():
+                cmd += f" --extra-vars '{key}={value}'"
+        
+        # Add verbose output
+        cmd += " -v"
+        
+        # Run the playbook
+        run_result = await ssh_execute_command(
+            hostname=hostname,
+            username=username,
+            password=password,
+            command=cmd
+        )
+        
+        run_data = json.loads(run_result)
+        
+        return {
+            "status": "success" if run_data.get("exit_code") == 0 else "error",
+            "service": service_name,
+            "action": "check" if check_mode else "run",
+            "command": cmd,
+            "output": run_data.get("output", ""),
+            "exit_code": run_data.get("exit_code")
         }

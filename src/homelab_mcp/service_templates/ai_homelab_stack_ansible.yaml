@@ -1,0 +1,401 @@
+name: "AI Homelab Stack (Ansible)"
+description: "Complete AI homelab deployment with MCP Server, Ollama LLM, and Web UI using Ansible orchestration"
+category: "ai-stack"
+priority: "high"
+version: "1.0.0"
+homepage: "https://github.com/washyu/mcp_python_server"
+
+# System requirements for full stack
+requirements:
+  ports: [8080, 11434, 3000, 80, 443]
+  memory_gb: 8  # For full stack with Ollama
+  disk_gb: 50   # For models and data
+  cpu_cores: 4  # Multi-service deployment
+  dependencies:
+    - python3
+    - docker
+    - nginx
+
+# Default configuration
+default_port: 80
+default_config:
+  mcp_port: 8080
+  ollama_port: 11434
+  webui_port: 3000
+  ssl_enabled: true
+  domain: "homelab.local"
+  ollama_models:
+    - "tinyllama"
+    - "phi"
+  enable_gpu: true
+
+# Ansible installation method
+installation:
+  method: "ansible"
+  ansible:
+    # Pre-installation tasks
+    pre_tasks:
+      - name: "Update system packages"
+        package:
+          update_cache: yes
+        when: "ansible_os_family == 'Debian'"
+      
+      - name: "Install system dependencies"
+        package:
+          name:
+            - python3
+            - python3-pip
+            - git
+            - curl
+            - nginx
+            - ufw
+          state: present
+      
+      - name: "Install Docker"
+        shell: |
+          curl -fsSL https://get.docker.com -o get-docker.sh
+          sudo sh get-docker.sh
+          sudo usermod -aG docker {{ ansible_user }}
+        args:
+          creates: /usr/bin/docker
+      
+      - name: "Install uv (Python package manager)"
+        shell: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+        args:
+          creates: "{{ ansible_user_dir }}/.cargo/bin/uv"
+        become_user: "{{ ansible_user }}"
+
+    # Main installation tasks
+    tasks:
+      - name: "Create application directories"
+        file:
+          path: "{{ item }}"
+          state: directory
+          owner: "{{ ansible_user }}"
+          group: "{{ ansible_user }}"
+          mode: '0755'
+        loop:
+          - /opt/mcp-server
+          - /opt/ollama
+          - /opt/webui
+          - /var/log/homelab
+          - /etc/nginx/sites-available
+          - /etc/nginx/sites-enabled
+
+      - name: "Clone MCP server repository"
+        git:
+          repo: "https://github.com/washyu/mcp_python_server.git"
+          dest: /opt/mcp-server
+          force: yes
+        become_user: "{{ ansible_user }}"
+
+      - name: "Install MCP server dependencies"
+        shell: |
+          cd /opt/mcp-server
+          ~/.cargo/bin/uv sync
+        become_user: "{{ ansible_user }}"
+
+      - name: "Create MCP server systemd service"
+        template:
+          src: mcp-server.service.j2
+          dest: /etc/systemd/system/mcp-server.service
+        vars:
+          mcp_port: "{{ mcp_port }}"
+          service_user: "{{ ansible_user }}"
+
+      - name: "Deploy Ollama container"
+        docker_container:
+          name: ollama
+          image: "ollama/ollama:latest"
+          state: started
+          restart_policy: unless-stopped
+          ports:
+            - "{{ ollama_port }}:11434"
+          volumes:
+            - "/opt/ollama/models:/root/.ollama"
+          devices:
+            - "/dev/nvidia0:/dev/nvidia0"  # GPU support
+          environment:
+            OLLAMA_HOST: "0.0.0.0"
+            OLLAMA_MODELS: "/models"
+          healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+
+      - name: "Wait for Ollama to be ready"
+        uri:
+          url: "http://localhost:{{ ollama_port }}/api/tags"
+          method: GET
+        register: ollama_health
+        until: ollama_health.status == 200
+        retries: 30
+        delay: 10
+
+      - name: "Pull Ollama models"
+        uri:
+          url: "http://localhost:{{ ollama_port }}/api/pull"
+          method: POST
+          body_format: json
+          body:
+            name: "{{ item }}"
+        loop: "{{ ollama_models }}"
+        when: ollama_models is defined
+
+      - name: "Deploy Web UI container"
+        docker_container:
+          name: homelab-webui
+          image: "node:18-alpine"
+          state: started
+          restart_policy: unless-stopped
+          ports:
+            - "{{ webui_port }}:3000"
+          volumes:
+            - "/opt/webui:/app"
+          working_dir: /app
+          command: ["npm", "start"]
+          environment:
+            REACT_APP_MCP_ENDPOINT: "http://{{ ansible_default_ipv4.address }}:{{ mcp_port }}"
+            REACT_APP_OLLAMA_ENDPOINT: "http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}"
+
+      - name: "Configure nginx reverse proxy"
+        template:
+          src: nginx-homelab.conf.j2
+          dest: "/etc/nginx/sites-available/homelab"
+        vars:
+          domain: "{{ domain }}"
+          mcp_port: "{{ mcp_port }}"
+          ollama_port: "{{ ollama_port }}"
+          webui_port: "{{ webui_port }}"
+
+      - name: "Enable nginx site"
+        file:
+          src: "/etc/nginx/sites-available/homelab"
+          dest: "/etc/nginx/sites-enabled/homelab"
+          state: link
+
+      - name: "Remove default nginx site"
+        file:
+          path: "/etc/nginx/sites-enabled/default"
+          state: absent
+
+      - name: "Configure firewall"
+        ufw:
+          rule: allow
+          port: "{{ item }}"
+        loop:
+          - "22"      # SSH
+          - "80"      # HTTP
+          - "443"     # HTTPS
+          - "{{ mcp_port }}"     # MCP API
+          - "{{ ollama_port }}"  # Ollama API
+          - "{{ webui_port }}"   # Web UI
+
+      - name: "Enable firewall"
+        ufw:
+          state: enabled
+
+    # Post-installation tasks
+    post_tasks:
+      - name: "Start and enable services"
+        systemd:
+          name: "{{ item }}"
+          state: started
+          enabled: yes
+          daemon_reload: yes
+        loop:
+          - mcp-server
+          - nginx
+
+      - name: "Test MCP server health"
+        uri:
+          url: "http://localhost:{{ mcp_port }}/health"
+          method: GET
+        register: mcp_health
+        until: mcp_health.status == 200
+        retries: 10
+        delay: 5
+
+      - name: "Test Ollama health"
+        uri:
+          url: "http://localhost:{{ ollama_port }}/api/tags"
+          method: GET
+        register: ollama_health_final
+        until: ollama_health_final.status == 200
+        retries: 5
+        delay: 5
+
+      - name: "Display deployment summary"
+        debug:
+          msg: |
+            ========================================
+            AI Homelab Stack Deployment Complete!
+            ========================================
+            
+            Services:
+            - MCP Server: http://{{ ansible_default_ipv4.address }}:{{ mcp_port }}
+            - Ollama API: http://{{ ansible_default_ipv4.address }}:{{ ollama_port }}
+            - Web UI: http://{{ ansible_default_ipv4.address }}:{{ webui_port }}
+            - Nginx Proxy: http://{{ domain }}
+            
+            Installed Models: {{ ollama_models | join(', ') }}
+            
+            Next Steps:
+            1. Access Web UI at http://{{ domain }}
+            2. Configure SSL certificate with certbot
+            3. Set up DNS for {{ domain }}
+            4. Test AI model inference
+
+    # Handlers for service restarts
+    handlers:
+      - name: "restart nginx"
+        systemd:
+          name: nginx
+          state: restarted
+
+      - name: "restart mcp-server"
+        systemd:
+          name: mcp-server
+          state: restarted
+
+      - name: "reload systemd"
+        systemd:
+          daemon_reload: yes
+
+# Service templates referenced in Ansible tasks
+service_templates:
+  mcp_server_service: |
+    [Unit]
+    Description=MCP Homelab Server
+    After=network.target
+    
+    [Service]
+    Type=simple
+    User={{ service_user }}
+    WorkingDirectory=/opt/mcp-server
+    ExecStart=/home/{{ service_user }}/.cargo/bin/uv run python run_server.py
+    Restart=always
+    RestartSec=5
+    Environment=PATH=/home/{{ service_user }}/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+    Environment=MCP_PORT={{ mcp_port }}
+    
+    [Install]
+    WantedBy=multi-user.target
+
+  nginx_config: |
+    server {
+        listen 80;
+        server_name {{ domain }};
+        
+        # Redirect HTTP to HTTPS
+        return 301 https://$server_name$request_uri;
+    }
+    
+    server {
+        listen 443 ssl http2;
+        server_name {{ domain }};
+        
+        # SSL configuration (requires certbot setup)
+        ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+        
+        # Web UI (default)
+        location / {
+            proxy_pass http://localhost:{{ webui_port }};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # MCP API
+        location /api/mcp/ {
+            proxy_pass http://localhost:{{ mcp_port }}/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # Ollama API
+        location /api/ollama/ {
+            proxy_pass http://localhost:{{ ollama_port }}/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+
+# Deployment validation checks
+validation:
+  health_checks:
+    - name: "MCP Server API"
+      url: "http://localhost:{{ mcp_port }}/health"
+      expected_status: 200
+    
+    - name: "Ollama API"
+      url: "http://localhost:{{ ollama_port }}/api/tags"
+      expected_status: 200
+    
+    - name: "Web UI"
+      url: "http://localhost:{{ webui_port }}"
+      expected_status: 200
+    
+    - name: "Nginx Proxy"
+      url: "http://{{ domain }}"
+      expected_status: 200
+
+# Post-installation setup
+post_install:
+  manual_steps:
+    - "Access the web interface at http://{{ domain }}"
+    - "Run 'sudo certbot --nginx -d {{ domain }}' to set up SSL"
+    - "Configure DNS to point {{ domain }} to this server"
+    - "Test AI model inference through the web interface"
+    - "Monitor logs in /var/log/homelab/"
+
+  automation_examples:
+    ssl_setup: "sudo certbot --nginx -d {{ domain }} --non-interactive --agree-tos --email admin@{{ domain }}"
+    model_test: "curl -X POST http://localhost:{{ ollama_port }}/api/generate -d '{\"model\": \"tinyllama\", \"prompt\": \"Hello!\"}'"
+    mcp_test: "curl http://localhost:{{ mcp_port }}/api/tools/list"
+
+# Monitoring and maintenance
+monitoring:
+  log_locations:
+    - "/var/log/homelab/mcp-server.log"
+    - "/var/log/nginx/access.log"
+    - "/var/log/nginx/error.log"
+    - "journalctl -u mcp-server"
+    - "docker logs ollama"
+    - "docker logs homelab-webui"
+
+  performance_commands:
+    - "systemctl status mcp-server ollama nginx"
+    - "docker stats ollama homelab-webui"
+    - "curl -s http://localhost:{{ mcp_port }}/metrics"
+    - "curl -s http://localhost:{{ ollama_port }}/api/ps"
+
+# Troubleshooting
+troubleshooting:
+  common_issues:
+    - issue: "MCP server fails to start"
+      solutions:
+        - "Check logs: journalctl -u mcp-server -f"
+        - "Verify Python dependencies: cd /opt/mcp-server && uv sync"
+        - "Check port availability: netstat -tlnp | grep {{ mcp_port }}"
+    
+    - issue: "Ollama container not starting"
+      solutions:
+        - "Check Docker status: docker ps -a"
+        - "Verify GPU access: nvidia-smi (if using GPU)"
+        - "Check logs: docker logs ollama"
+    
+    - issue: "Web UI not accessible"
+      solutions:
+        - "Check nginx status: systemctl status nginx"
+        - "Verify proxy configuration: nginx -t"
+        - "Check firewall: ufw status"
+        - "Test direct access: curl http://localhost:{{ webui_port }}"
