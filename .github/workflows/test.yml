@@ -108,24 +108,31 @@ jobs:
       with:
         python-version: '3.12'
 
-    - name: Install UV
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
     - name: Install dependencies
       run: |
-        uv pip install --system -r requirements.txt
-        uv pip install --system -r requirements-dev.txt
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
     - name: Install Docker Compose
       run: |
         sudo apt-get update
-        sudo apt-get install -y docker-compose
+        sudo apt-get install -y docker-compose-plugin
+        # Create symlink for docker-compose command
+        sudo ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+
+    - name: Verify Docker setup
+      run: |
+        docker --version
+        docker-compose --version
+        docker info
 
     - name: Run integration tests
       run: |
-        pytest tests/integration -v -m integration
+        pytest tests/integration -v
 
   security-scan:
     runs-on: ubuntu-latest

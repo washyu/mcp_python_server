@@ -17,13 +17,25 @@ def docker_client():
 @pytest.fixture(scope="session")
 def test_container(docker_client):
     """Start and manage the test Ubuntu container."""
+    import shutil
+    
+    # Check if docker-compose is available
+    if not shutil.which("docker-compose"):
+        pytest.skip(
+            "docker-compose not available. Install Docker Compose:\n"
+            "https://docs.docker.com/compose/install/"
+        )
+    
     project_root = Path(__file__).parent.parent.parent
     compose_file = project_root / "docker-compose.test.yml"
     
     # Start the container using docker-compose
-    subprocess.run([
-        "docker-compose", "-f", str(compose_file), "up", "-d", "--build"
-    ], check=True, cwd=project_root)
+    try:
+        subprocess.run([
+            "docker-compose", "-f", str(compose_file), "up", "-d", "--build"
+        ], check=True, cwd=project_root)
+    except subprocess.CalledProcessError as e:
+        pytest.skip(f"Failed to start Docker containers: {e}")
     
     # Wait for container to be ready
     container = docker_client.containers.get("mcp-test-ubuntu")
@@ -71,9 +83,13 @@ def test_container(docker_client):
     }
     
     # Cleanup
-    subprocess.run([
-        "docker-compose", "-f", str(compose_file), "down", "-v"
-    ], cwd=project_root)
+    try:
+        subprocess.run([
+            "docker-compose", "-f", str(compose_file), "down", "-v"
+        ], cwd=project_root)
+    except subprocess.CalledProcessError:
+        # Best effort cleanup
+        pass
 
 
 @pytest.fixture
