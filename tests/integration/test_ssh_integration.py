@@ -13,8 +13,7 @@ from src.homelab_mcp.ssh_tools import (
     setup_remote_mcp_admin,
     verify_mcp_admin_access,
     ssh_discover_system,
-    get_mcp_ssh_key_path,
-    get_mcp_public_key_path
+    get_mcp_ssh_key_path
 )
 
 
@@ -26,7 +25,7 @@ class TestSSHIntegration:
         """Test that SSH key generation works."""
         # Clean up any existing keys for this test
         key_path = get_mcp_ssh_key_path()
-        pub_key_path = get_mcp_public_key_path()
+        pub_key_path = Path(str(key_path) + ".pub")
         
         if key_path.exists():
             key_path.unlink()
@@ -134,7 +133,7 @@ class TestSSHIntegration:
         assert setup_data1["status"] == "success"
         
         # Modify the SSH key to simulate a different key
-        pub_key_path = get_mcp_public_key_path()
+        pub_key_path = Path(str(key_path) + ".pub")
         with open(pub_key_path, 'r') as f:
             original_key = f.read()
         
