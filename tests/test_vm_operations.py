@@ -300,9 +300,19 @@ class TestVMOperations:
         
         mock_provider.remove_vm.assert_called_once_with(mock_conn, "test-container", False)
     
+    @patch('src.homelab_mcp.vm_operations.VMManager')
     @patch('src.homelab_mcp.vm_operations.get_vm_provider')
-    async def test_unsupported_platform(self, mock_get_provider):
+    async def test_unsupported_platform(self, mock_get_provider, mock_vm_manager):
         """Test handling of unsupported platform."""
+        # Mock the VM manager to return connection info (async method)
+        mock_manager = mock_vm_manager.return_value
+        mock_manager.get_device_connection_info = AsyncMock(return_value={
+            'hostname': 'test-host',
+            'username': 'mcp_admin',
+            'port': 22
+        })
+        
+        # Mock get_vm_provider to raise an error for unsupported platform
         mock_get_provider.side_effect = ValueError("Unsupported platform: unsupported")
         
         result_json = await deploy_vm(1, "unsupported", "test", {})
