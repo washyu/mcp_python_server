@@ -10,8 +10,7 @@ def test_get_available_tools():
     """Test getting available tools."""
     tools = get_available_tools()
     
-    assert len(tools) == 30  # Original 4 + 6 sitemap tools + 7 CRUD tools + 6 VM tools + 2 ssh tools + 5 service tools
-    assert "hello_world" in tools
+    assert len(tools) == 34  # All tools including SSH, sitemap, infrastructure, VM, service, and Ansible tools
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" in tools
     assert "verify_mcp_admin" in tools
@@ -41,10 +40,10 @@ def test_get_available_tools():
     assert "get_vm_logs" in tools
     assert "remove_vm" in tools
     
-    # Check hello_world tool schema
-    hello_tool = tools["hello_world"]
-    assert "description" in hello_tool
-    assert "inputSchema" in hello_tool
+    # Service and Ansible tools
+    assert "install_service" in tools
+    assert "run_ansible_playbook" in tools
+    assert "check_ansible_service" in tools
     
     # Check ssh_discover tool schema
     ssh_tool = tools["ssh_discover"]
@@ -52,17 +51,6 @@ def test_get_available_tools():
     assert "inputSchema" in ssh_tool
     assert "hostname" in ssh_tool["inputSchema"]["properties"]
     assert "username" in ssh_tool["inputSchema"]["properties"]
-
-
-@pytest.mark.asyncio
-async def test_execute_hello_world():
-    """Test executing hello_world tool."""
-    result = await execute_tool("hello_world", {})
-    
-    assert "content" in result
-    assert len(result["content"]) > 0
-    assert result["content"][0]["type"] == "text"
-    assert "Hello" in result["content"][0]["text"]
 
 
 @pytest.mark.asyncio

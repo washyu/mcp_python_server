@@ -59,11 +59,10 @@ async def test_tools_list():
     assert "tools" in response["result"]
     
     tools = response["result"]["tools"]
-    assert len(tools) == 23  # Original 4 + 6 sitemap tools + 7 CRUD tools + 6 VM tools
+    assert len(tools) == 34  # All tools including SSH, sitemap, infrastructure, VM, service, and Ansible tools
     
     # Check tool names and descriptions
     tool_names = [tool.get("description") for tool in tools]
-    assert any("greeting" in desc for desc in tool_names)
     assert any("SSH" in desc for desc in tool_names)
     assert any("setup mcp_admin" in desc for desc in tool_names)
     assert any("Verify" in desc for desc in tool_names)
@@ -72,31 +71,6 @@ async def test_tools_list():
     assert any("network site map" in desc for desc in tool_names)
     assert any("topology" in desc for desc in tool_names)
     assert any("deployment" in desc for desc in tool_names)
-
-
-@pytest.mark.asyncio
-async def test_hello_world_tool():
-    """Test the hello_world tool."""
-    server = HomelabMCPServer()
-    
-    request = {
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "tools/call",
-        "params": {
-            "name": "hello_world"
-        }
-    }
-    
-    response = await server.handle_request(request)
-    
-    assert response["jsonrpc"] == "2.0"
-    assert response["id"] == 3
-    assert "result" in response
-    assert "content" in response["result"]
-    assert len(response["result"]["content"]) > 0
-    assert response["result"]["content"][0]["type"] == "text"
-    assert "Hello" in response["result"]["content"][0]["text"]
 
 
 @pytest.mark.asyncio
