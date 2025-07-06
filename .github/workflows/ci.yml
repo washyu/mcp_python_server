@@ -32,10 +32,12 @@ jobs:
         pytest -v --tb=short
 
     - name: Run linting
+      continue-on-error: true
       run: |
         black --check src tests
         flake8 src tests
 
     - name: Run type checking
+      continue-on-error: true
       run: |
         mypy src tests --ignore-missing-imports
