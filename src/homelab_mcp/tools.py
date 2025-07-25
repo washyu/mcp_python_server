@@ -5,6 +5,11 @@ from typing import Any, Dict
 
 from .ssh_tools import ssh_discover_system, setup_remote_mcp_admin, verify_mcp_admin_access
 from .sitemap import NetworkSiteMap, discover_and_store, bulk_discover_and_store
+from .package_manager import (
+    package_search, package_info, package_install, package_list,
+    package_update, package_remove, package_source_add,
+    package_source_remove, package_source_list
+)
 
 
 # Tool registry
@@ -956,6 +961,188 @@ TOOLS = {
             },
             "required": ["service_name", "hostname"]
         }
+    },
+    "package_search": {
+        "description": "Search for packages in the registry",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (matches name or description)"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter by tags"
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    "package_info": {
+        "description": "Get detailed information about a package",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Package name"
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Package version (default: latest)",
+                    "default": "latest"
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Package source (default: official)",
+                    "default": "official"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    "package_install": {
+        "description": "Install a package from the registry",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Package name to install"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Target hostname or IP address"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password"
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Package version (default: latest)",
+                    "default": "latest"
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Package source (default: official)",
+                    "default": "official"
+                },
+                "config": {
+                    "type": "object",
+                    "description": "Configuration overrides"
+                }
+            },
+            "required": ["name", "hostname"]
+        }
+    },
+    "package_list": {
+        "description": "List installed packages",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Filter by hostname (optional)"
+                }
+            }
+        }
+    },
+    "package_update": {
+        "description": "Update an installed package to the latest version",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Package name to update"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Target hostname or IP address"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password"
+                }
+            },
+            "required": ["name", "hostname"]
+        }
+    },
+    "package_remove": {
+        "description": "Remove an installed package",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Package name to remove"
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Target hostname or IP address"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username",
+                    "default": "mcp_admin"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password"
+                }
+            },
+            "required": ["name", "hostname"]
+        }
+    },
+    "package_source_add": {
+        "description": "Add a new package source repository",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Source name"
+                },
+                "url": {
+                    "type": "string",
+                    "description": "GitHub repository URL"
+                }
+            },
+            "required": ["name", "url"]
+        }
+    },
+    "package_source_remove": {
+        "description": "Remove a package source",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Source name to remove"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    "package_source_list": {
+        "description": "List all package sources",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
     }
 }
 
@@ -1224,6 +1411,42 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
         installer = ServiceInstaller()
         result = await installer.run_ansible_playbook(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+    
+    elif tool_name == "package_search":
+        result = await package_search(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "package_info":
+        result = await package_info(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "package_install":
+        result = await package_install(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "package_list":
+        result = await package_list(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "package_update":
+        result = await package_update(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "package_remove":
+        result = await package_remove(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "package_source_add":
+        result = await package_source_add(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "package_source_remove":
+        result = await package_source_remove(**arguments)
+        return {"content": [{"type": "text", "text": result}]}
+    
+    elif tool_name == "package_source_list":
+        result = await package_source_list()
+        return {"content": [{"type": "text", "text": result}]}
     
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

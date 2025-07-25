@@ -1,0 +1,34 @@
+{
+  "packages": {
+    "pihole": {
+      "latest": "2024.07.0",
+      "versions": ["2024.07.0", "2024.06.0", "2024.05.0"],
+      "description": "Network-wide ad blocker for your entire network",
+      "tags": ["dns", "adblock", "network", "security"],
+      "manifest": "packages/pihole/manifest.yaml"
+    },
+    "jellyfin": {
+      "latest": "10.8.13",
+      "versions": ["10.8.13", "10.8.12", "10.8.11"],
+      "description": "The Free Software Media System",
+      "tags": ["media", "streaming", "video", "music"],
+      "manifest": "packages/jellyfin/manifest.yaml"
+    },
+    "homeassistant": {
+      "latest": "2024.1.3",
+      "versions": ["2024.1.3", "2024.1.2", "2024.1.1"],
+      "description": "Open source home automation that puts local control and privacy first",
+      "tags": ["automation", "smart-home", "iot"],
+      "manifest": "packages/homeassistant/manifest.yaml"
+    },
+    "nextcloud": {
+      "latest": "28.0.1",
+      "versions": ["28.0.1", "28.0.0", "27.1.5"],
+      "description": "Self-hosted cloud storage and collaboration platform",
+      "tags": ["storage", "cloud", "collaboration", "files"],
+      "manifest": "packages/nextcloud/manifest.yaml"
+    }
+  },
+  "updated": "2024-01-25T12:00:00Z",
+  "version": "1.0.0"
+}
