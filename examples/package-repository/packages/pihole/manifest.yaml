@@ -1,0 +1,111 @@
+name: pihole
+version: "2024.07.0"
+description: "Network-wide ad blocker for your entire network"
+homepage: https://pi-hole.net
+license: EUPL-1.2
+maintainer: homelab-mcp
+tags:
+  - dns
+  - adblock
+  - network
+  - security
+
+requirements:
+  ports: [80, 53, 443, 67]
+  memory_gb: 1
+  disk_gb: 2
+  cpu_cores: 1
+
+default_port: 80
+
+variables:
+  - name: webpassword
+    type: password
+    description: "Admin interface password"
+    generate: true
+  - name: timezone
+    type: string
+    description: "System timezone"
+    default: "UTC"
+  - name: upstream_dns
+    type: array
+    description: "Upstream DNS servers"
+    default: ["1.1.1.1", "1.0.0.1"]
+
+install:
+  method: docker-compose
+  compose:
+    version: "3.8"
+    services:
+      pihole:
+        container_name: pihole
+        image: pihole/pihole:2024.07.0
+        restart: unless-stopped
+        ports:
+          - "53:53/tcp"
+          - "53:53/udp"
+          - "80:80/tcp"
+          - "443:443/tcp"
+        environment:
+          TZ: "{{timezone}}"
+          WEBPASSWORD: "{{webpassword}}"
+          PIHOLE_DNS_: "{{upstream_dns|join(';')}}"
+          DNSMASQ_LISTENING: all
+          WEB_PORT: 80
+        volumes:
+          - "/opt/pihole/etc-pihole:/etc/pihole"
+          - "/opt/pihole/etc-dnsmasq.d:/etc/dnsmasq.d"
+        dns:
+          - 127.0.0.1
+          - 1.1.1.1
+        cap_add:
+          - NET_ADMIN
+        networks:
+          - pihole-network
+    
+    networks:
+      pihole-network:
+        driver: bridge
+
+post_install:
+  - message: "Pi-hole installed successfully!"
+  - message: "Access the admin interface at: http://{{hostname}}/admin"
+  - message: "Admin password: {{webpassword}}"
+  - command: "docker logs pihole | grep 'password:' | tail -1"
+    description: "Show generated password if not set"
+
+health_check:
+  endpoint: "http://{{hostname}}/admin/api.php"
+  interval: 60
+  timeout: 10
+
+backup:
+  paths:
+    - /opt/pihole/etc-pihole
+    - /opt/pihole/etc-dnsmasq.d
+  schedule: "0 3 * * *"
+
+variants:
+  hotspot:
+    description: "Configuration for travel hotspot mode"
+    config:
+      dhcp_enabled: true
+      interface: wlan0
+    compose_override:
+      services:
+        pihole:
+          environment:
+            DHCP_ACTIVE: "true"
+            DHCP_START: "192.168.4.20"
+            DHCP_END: "192.168.4.254"
+            DHCP_ROUTER: "192.168.4.1"
+  
+  minimal:
+    description: "Minimal configuration without HTTPS"
+    compose_override:
+      services:
+        pihole:
+          ports:
+            - "53:53/tcp"
+            - "53:53/udp"
+            - "80:80/tcp"
