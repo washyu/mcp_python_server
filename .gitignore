@@ -6,6 +6,24 @@ dist/
 wheels/
 *.egg-info
 
+# PyInstaller
+*.spec
+*.manifest
+*.pkg
+
+# Nuitka
+*.build/
+*.dist/
+*.onefile-build/
+
+# Executable files
+homelab-mcp-server
+homelab-mcp-server.exe
+homelab-mcp-server-*
+
+# Wine prefix (for cross-compilation)
+.wine/
+
 # Virtual environments
 .venv
 

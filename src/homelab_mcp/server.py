@@ -134,11 +134,11 @@ class HomelabMCPServer:
                 sys.stdout.flush()
 
 
-async def main():
+def main():
     """Main entry point."""
     server = HomelabMCPServer()
-    await server.run_stdio()
+    asyncio.run(server.run_stdio())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

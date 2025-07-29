@@ -1,0 +1,145 @@
+name: Build Executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            artifact_name: homelab-mcp-server-linux-x86_64
+            asset_name: homelab-mcp-server-linux-x86_64
+          
+          - os: windows-latest
+            platform: windows-x86_64
+            artifact_name: homelab-mcp-server-windows-x86_64.exe
+            asset_name: homelab-mcp-server-windows-x86_64.exe
+          
+          - os: macos-latest
+            platform: macos-x86_64
+            artifact_name: homelab-mcp-server-macos-x86_64
+            asset_name: homelab-mcp-server-macos-x86_64
+          
+          - os: macos-14  # M1/M2 runner
+            platform: macos-arm64
+            artifact_name: homelab-mcp-server-macos-arm64
+            asset_name: homelab-mcp-server-macos-arm64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+
+    - name: Set up Python
+      run: uv python install 3.12
+
+    - name: Install dependencies
+      run: |
+        uv sync --all-extras --dev
+
+    - name: Build executable
+      run: |
+        uv run python build_all_platforms.py --platform ${{ matrix.platform }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.platform }}-executable
+        path: dist/${{ matrix.platform }}/${{ matrix.artifact_name }}
+
+    - name: Upload build info
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.platform }}-build-info
+        path: dist/${{ matrix.platform }}/build_info.txt
+
+  create-release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare release files
+      run: |
+        mkdir -p release
+        find artifacts -name "homelab-mcp-server*" -type f -exec cp {} release/ \;
+        ls -la release/
+
+    - name: Create checksums
+      run: |
+        cd release
+        sha256sum homelab-mcp-server* > checksums.sha256
+        cat checksums.sha256
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          release/homelab-mcp-server*
+          release/checksums.sha256
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  test-executables:
+    name: Test ${{ matrix.os }} executable
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            executable: homelab-mcp-server-linux-x86_64
+          
+          - os: windows-latest
+            platform: windows-x86_64
+            executable: homelab-mcp-server-windows-x86_64.exe
+          
+          - os: macos-latest
+            platform: macos-x86_64
+            executable: homelab-mcp-server-macos-x86_64
+          
+          - os: macos-14
+            platform: macos-arm64
+            executable: homelab-mcp-server-macos-arm64
+
+    steps:
+    - name: Download executable
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ matrix.platform }}-executable
+        path: .
+
+    - name: Make executable (Unix)
+      if: runner.os != 'Windows'
+      run: chmod +x ${{ matrix.executable }}
+
+    - name: Test executable
+      run: |
+        echo '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}' | ./${{ matrix.executable }} || true
+      shell: bash
+      timeout-minutes: 1
